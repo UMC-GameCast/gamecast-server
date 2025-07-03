@@ -1,0 +1,184 @@
+name: Backend CI/CD
+
+on:
+  pull_request:
+    types: [ opened, synchronize, closed ]
+    branches: [ dev, main ]
+    paths:
+      - 'src/**'
+      - 'routes/**'
+      - 'controllers/**'
+      - 'models/**'
+      - 'middleware/**'
+      - 'config/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/**'
+
+jobs:
+  test:
+    # PR 열리거나(PR 생성), 업데이트(푸시/수정)될때 실행
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linting
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: Execute tests
+        env:
+          # test 환경 변수
+          NODE_ENV: "test"
+          DB_HOST: "localhost"
+          DB_PORT: "3306"
+          DB_NAME: "test_db"
+          DB_USERNAME: "test_user"
+          DB_PASSWORD: "test_password"
+          # JWT & OAuth 테스트 환경 변수
+          JWT_SECRET: "jwtSecretKeyForTestingPurposesOnlyDoNotUseInProduction"
+        run: npm test
+
+  set-environment:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-environment.outputs.environment }}
+    steps:
+      - name: Set env
+        id: set-environment
+        run: |
+          echo "Target Branch -> ${{ github.base_ref }}"
+          echo "environment=dev" >> $GITHUB_OUTPUT
+
+          if [[ ${{ github.base_ref }} == "main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          fi
+      - name: Check env
+        run: echo "Current environment -> ${{ steps.set-environment.outputs.environment }}"
+
+  image-build:
+    runs-on: ubuntu-latest
+    needs: [ set-environment ]
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        environment: [ "${{ needs.set-environment.outputs.environment }}" ]
+    environment: ${{matrix.environment}}
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        env:
+          NODE_ENV: ${{ matrix.environment }}
+        run: npm run build
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: 'true'
+      
+      - name: Docker build & push
+        run: |
+          docker build --build-arg NODE_ENV=${{ matrix.environment }} --platform linux/arm64 -f docker/Dockerfile --tag ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [ set-environment, image-build ]
+    strategy:
+      matrix:
+        environment: [ "${{needs.set-environment.outputs.environment}}" ]
+    environment: ${{matrix.environment}}
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+      
+      - name: Deploy new Express.js Application
+        id: deploy-status
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            cd ~/project
+
+            # create .env file
+            cat <<EOF > .env
+            # Express.js app environment
+            EXPRESS_APP_IMAGE_REPOSITORY=${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}
+            EXPRESS_APP_IMAGE_TAG=${{ github.sha }}
+            NODE_ENV=${{ matrix.environment }}
+            PORT=3000
+
+            # Database environment
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_URL=${{ secrets.DB_URL }}
+
+            # JWT 
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }}
+
+            # AWS}
+            AWS_REGION=${{ secrets.AWS_REGION }}
+            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+            # SSL Configuration (if using HTTPS)
+            SSL_KEY_PATH=${{secrets.SSL_KEY_PATH}}
+            SSL_CERT_PATH=${{secrets.SSL_CERT_PATH}}
+            
+            # CORS Settings
+            CORS_ORIGIN=${{secrets.CORS_ORIGIN}}
+            
+            # Session Settings
+            SESSION_SECRET=${{secrets.SESSION_SECRET}}
+            EOF
+
+            # export to shell
+            export AWS_REGION=${{ secrets.AWS_REGION }}
+            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+            # deploy with docker
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            sudo docker-compose stop express-app
+            sudo docker-compose rm -f express-app
+            sudo docker images --filter=reference="*/express-app-${{ matrix.environment }}:*" -q | xargs -r sudo docker rmi -f
+            sudo docker-compose up -d express-app
