@@ -4,11 +4,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon -e js,json,prisma --exec \"prisma generate && node src/index.js\"",
+    "start": "node dist/index.js",
+    "dev": "NODE_OPTIONS='--loader ts-node/esm' ts-node src/index.ts",
+    "build": "tsc",
     "test": "jest --coverage",
-    "lint": "eslint src/ --ext .js",
-    "build": "echo 'Build completed'"
+    "lint": "eslint src/ --ext .ts,.tsx",
+    "watch": "nodemon --exec \"NODE_OPTIONS='--loader ts-node/esm' ts-node src/index.ts\""
   },
   "author": "",
   "license": "ISC",
@@ -37,6 +38,19 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
-    "nodemon": "^3.1.10"
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.0.13",
+    "@types/passport": "^1.0.17",
+    "@types/passport-google-oauth20": "^2.0.16",
+    "@types/passport-local": "^1.0.38",
+    "@types/swagger-ui-express": "^4.1.8",
+    "@types/winston": "^2.4.4",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   }
 }
