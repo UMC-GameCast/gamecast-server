@@ -4,6 +4,9 @@
 
 ## 🚀목차
 - [진행 현황](#진행-현황-progress)
+- [API 응답 형식](#-api-응답-형식)
+- [예외 처리](#-예외-처리)
+- [Swagger 문서](#-swagger-문서)
 - [개발 사이클](#-개발-사이클-development-workflow)
 - [Git 커밋 메시지 컨벤션](#-git-커밋-메시지-컨벤션)
 
@@ -13,11 +16,158 @@
 
 | 기능                  | 상태 | 설명                                      |
 |---------------------|------|-----------------------------------------|
-| 프로젝트 세팅          |🟡 진행 중| Express.js 세팅, Swagger 문서화, CI/CD파이프라인, Dockerfile 세팅 |
-| CI/CD 테스트           | ⏳ : 예정 | GitHub Actions + EC2 + Docker           |
-| API 문서화             | ⏳ : 예정 | API 설계, Swagger 적용                    |
+| 프로젝트 세팅          |✅ 완료| Express.js 세팅, TypeScript 적용           |
+| 기본 응답 형식 설계     |✅ 완료| 응답 통일, 페이지네이션 지원               |
+| 공통 예외 처리         |✅ 완료| 커스텀 에러 클래스, 전역 에러 핸들러        |
+| Swagger 설정          |✅ 완료| API 문서 자동화, 타입 정의                |
+| CI/CD 테스트           | ⏳ 예정 | GitHub Actions + EC2 + Docker           |
 
 > 🟡 : 개발 중 / ⏳ : 예정 / ✅ : 완료
+
+---
+
+## 📋 API 응답 형식
+
+### 기본 응답 구조
+
+모든 API는 다음과 같은 통일된 형식으로 응답합니다:
+
+#### 성공 응답
+```json
+{
+  "resultType": "SUCCESS",
+  "error": null,
+  "success": {
+    // 실제 데이터
+  }
+}
+```
+
+#### 실패 응답
+```json
+{
+  "resultType": "FAIL",
+  "error": {
+    "errorCode": "ERROR_CODE",
+    "reason": "에러 설명",
+    "data": null // 추가 데이터 (선택사항)
+  },
+  "success": null
+}
+```
+
+#### 페이지네이션 응답
+```json
+{
+  "resultType": "SUCCESS",
+  "error": null,
+  "success": {
+    "data": [
+      // 실제 데이터 배열
+    ],
+    "pagination": {
+      "page": 1,
+      "size": 10,
+      "totalElements": 100,
+      "totalPages": 10,
+      "hasNext": true,
+      "hasPrevious": false
+    }
+  }
+}
+```
+
+### 응답 헬퍼 사용법
+
+컨트롤러에서 다음과 같이 사용할 수 있습니다:
+
+```typescript
+// 성공 응답
+res.success(data);
+
+// 에러 응답
+res.error("ERROR_CODE", "에러 메시지", additionalData);
+
+// 페이지네이션 응답
+res.paginated(dataArray, page, size, totalElements);
+```
+
+---
+
+## ⚠️ 예외 처리
+
+### 커스텀 에러 클래스
+
+| 에러 클래스 | HTTP 상태 | 설명 |
+|------------|----------|------|
+| `BadRequestError` | 400 | 잘못된 요청 |
+| `UnauthorizedError` | 401 | 인증 필요 |
+| `ForbiddenError` | 403 | 접근 권한 없음 |
+| `NotFoundError` | 404 | 리소스 없음 |
+| `ConflictError` | 409 | 리소스 충돌 |
+| `ValidationError` | 422 | 유효성 검사 실패 |
+| `InternalServerError` | 500 | 서버 내부 오류 |
+
+### 사용 예시
+
+```typescript
+import { BadRequestError, NotFoundError } from '../errors/custom.errors.js';
+
+// 에러 발생
+throw new BadRequestError('유효하지 않은 파라미터입니다.');
+throw new NotFoundError('사용자를 찾을 수 없습니다.');
+
+// 비동기 함수 에러 처리
+import { asyncHandler } from '../middlewares/error.middleware.js';
+
+router.get('/users/:id', asyncHandler(async (req, res) => {
+  // 에러가 발생하면 자동으로 전역 에러 핸들러로 전달됨
+  const user = await getUserById(req.params.id);
+  res.success(user);
+}));
+```
+
+---
+
+## � Swagger 문서
+
+### 접속 방법
+- 개발 환경: `http://localhost:8888/docs`
+- API 스펙: `http://localhost:8888/openapi.json`
+
+### Swagger 주석 사용법
+
+```typescript
+router.get('/users/:id', asyncHandler(async (req, res) => {
+  // #swagger.tags = ['User']
+  // #swagger.summary = '사용자 상세 조회'
+  // #swagger.description = 'ID를 통해 특정 사용자의 정보를 조회합니다.'
+  // #swagger.parameters['id'] = { 
+  //   in: 'path', 
+  //   description: '사용자 ID', 
+  //   required: true, 
+  //   schema: { type: 'integer' } 
+  // }
+  // #swagger.responses[200] = { 
+  //   description: '사용자 조회 성공',
+  //   content: {
+  //     "application/json": {
+  //       schema: { $ref: '#/definitions/SuccessResponse' }
+  //     }
+  //   }
+  // }
+  
+  const user = await getUserById(req.params.id);
+  res.success(user);
+}));
+```
+
+### 사전 정의된 스키마
+
+- `SuccessResponse`: 성공 응답 형식
+- `FailResponse`: 실패 응답 형식
+- `PaginatedResponse`: 페이지네이션 응답 형식
+- `User`: 사용자 모델
 
 ---
 
