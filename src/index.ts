@@ -89,13 +89,17 @@ app.get("/", (req, res) => {
   // #swagger.responses[200] = { 
   //   description: '서버 정상 작동',
   //   content: {
-  //     "text/plain": {
-  //       example: "Hello World!"
+  //     "application/json": {
+  //       schema: { $ref: '#/definitions/SuccessResponse' },
+  //       example: {
+  //         resultType: "SUCCESS",
+  //         error: null,
+  //         success: "Hello World! Server is running successfully."
+  //       }
   //     }
   //   }
   // }
-  console.log(req.user);
-  res.send("Hello World!");
+  res.success("Hello World! Server is running successfully.");
 });
 
 app.get("/openapi.json", async (req, res, next) => {
