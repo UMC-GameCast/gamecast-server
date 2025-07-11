@@ -5,11 +5,13 @@
   "main": "index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "NODE_OPTIONS='--loader ts-node/esm' ts-node src/index.ts",
+    "start:ts": "node --import ./loader.mjs --no-warnings src/index.ts",
+    "dev": "npm run build && PORT=8888 npm start",
+    "dev:watch": "nodemon --exec \"npm run dev\"",
     "build": "tsc",
     "test": "jest --coverage",
     "lint": "eslint src/ --ext .ts,.tsx",
-    "watch": "nodemon --exec \"NODE_OPTIONS='--loader ts-node/esm' ts-node src/index.ts\""
+    "watch": "nodemon --exec \"node --import ./loader.mjs --no-warnings src/index.ts\""
   },
   "author": "",
   "license": "ISC",
