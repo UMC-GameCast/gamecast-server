@@ -13,19 +13,61 @@ on:
       - 'config/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'docker/**'
       - '.github/**'
 
+env:
+  REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+
 jobs:
+  # Security and validation checks
+  security-scan:
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run security audit
+        run: npm audit --audit-level moderate
+        continue-on-error: true
+      
+      - name: Check for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+  # Code quality and testing
   test:
-    # PR 열리거나(PR 생성), 업데이트(푸시/수정)될때 실행
     if: github.event.action == 'opened' || github.event.action == 'synchronize'
     runs-on: ubuntu-latest
     environment: test
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: test_db
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
     steps:
-      - name: Checkout the code
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -34,42 +76,68 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Run TypeScript compilation
+        run: npm run build
+      
       - name: Run linting
         run: npm run lint
-        continue-on-error: true
       
-      - name: Execute tests
+      - name: Run prettier check
+        run: npx prettier --check "src/**/*.{ts,tsx,json}"
+      
+      - name: Run tests with coverage
         env:
-          # test 환경 변수
-          NODE_ENV: "test"
-          DB_HOST: "localhost"
-          DB_PORT: "3306"
-          DB_NAME: "test_db"
-          DB_USERNAME: "test_user"
-          DB_PASSWORD: "test_password"
-          # JWT & OAuth 테스트 환경 변수
-          JWT_SECRET: "jwtSecretKeyForTestingPurposesOnlyDoNotUseInProduction"
-        run: npm test
+          NODE_ENV: test
+          DATABASE_URL: mysql://test_user:test_password@localhost:3306/test_db
+          EXPRESS_SESSION_SECRET: test_session_secret
+          JWT_SECRET: test_jwt_secret
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: npm run test:coverage
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
 
+  # Environment setup
   set-environment:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.set-environment.outputs.environment }}
+      version: ${{ steps.set-version.outputs.version }}
     steps:
-      - name: Set env
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set environment
         id: set-environment
         run: |
           echo "Target Branch -> ${{ github.base_ref }}"
           echo "environment=dev" >> $GITHUB_OUTPUT
-
           if [[ ${{ github.base_ref }} == "main" ]]; then
             echo "environment=prod" >> $GITHUB_OUTPUT
           fi
-      - name: Check env
-        run: echo "Current environment -> ${{ steps.set-environment.outputs.environment }}"
+      
+      - name: Set version
+        id: set-version
+        run: |
+          if [[ ${{ github.base_ref }} == "main" ]]; then
+            echo "version=$(date +%Y.%m.%d)-${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
+          else
+            echo "version=dev-${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check environment
+        run: |
+          echo "Environment: ${{ steps.set-environment.outputs.environment }}"
+          echo "Version: ${{ steps.set-version.outputs.version }}"
 
-  image-build:
+  # Build and push Docker image
+  build-and-push:
     runs-on: ubuntu-latest
     needs: [ set-environment ]
     permissions:
@@ -78,12 +146,16 @@ jobs:
     strategy:
       matrix:
         environment: [ "${{ needs.set-environment.outputs.environment }}" ]
-    environment: ${{matrix.environment}}
+    environment: ${{ matrix.environment }}
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
     steps:
-      - name: Checkout the code
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -97,35 +169,60 @@ jobs:
           NODE_ENV: ${{ matrix.environment }}
         run: npm run build
       
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
           mask-password: 'true'
       
-      - name: Docker build & push
-        run: |
-          docker build --build-arg NODE_ENV=${{ matrix.environment }} --platform linux/arm64 -f docker/Dockerfile --tag ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=${{ needs.set-environment.outputs.version }}
+      
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          target: runner
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NODE_ENV=${{ matrix.environment }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+  # Deploy application
   deploy:
     runs-on: ubuntu-latest
-    needs: [ set-environment, image-build ]
+    needs: [ set-environment, build-and-push ]
     strategy:
       matrix:
-        environment: [ "${{needs.set-environment.outputs.environment}}" ]
-    environment: ${{matrix.environment}}
+        environment: [ "${{ needs.set-environment.outputs.environment }}" ]
+    environment: ${{ matrix.environment }}
+    
     steps:
-      - name: Checkout the code
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Deploy new Express.js Application
-        id: deploy-status
+      - name: Deploy to EC2
+        id: deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -134,51 +231,120 @@ jobs:
           port: 22
           script: |
             cd ~/project
-
-            # create .env file
+            
+            # Backup current deployment
+            if [ -f docker-compose.yml ]; then
+              cp docker-compose.yml docker-compose.backup.yml
+              cp .env .env.backup
+            fi
+            
+            # Create .env file
             cat <<EOF > .env
-            # Express.js app environment
-            EXPRESS_APP_IMAGE_REPOSITORY=${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}
-            EXPRESS_APP_IMAGE_TAG=${{ github.sha }}
+            EXPRESS_APP_IMAGE_REPOSITORY=${{ env.REGISTRY }}/${{ env.REPOSITORY }}
+            EXPRESS_APP_IMAGE_TAG=${{ needs.set-environment.outputs.version }}
             NODE_ENV=${{ matrix.environment }}
             PORT=3000
-
-            # Database environment
+            
+            # Database
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
             DB_HOST=${{ secrets.DB_HOST }}
             DB_PORT=${{ secrets.DB_PORT }}
             DB_NAME=${{ secrets.DB_NAME }}
             DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_URL=${{ secrets.DB_URL }}
-
-            # JWT 
+            
+            # Security
+            EXPRESS_SESSION_SECRET=${{ secrets.EXPRESS_SESSION_SECRET }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }}
-
-            # AWS}
+            
+            # AWS
             AWS_REGION=${{ secrets.AWS_REGION }}
             AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-            # SSL Configuration (if using HTTPS)
-            SSL_KEY_PATH=${{secrets.SSL_KEY_PATH}}
-            SSL_CERT_PATH=${{secrets.SSL_CERT_PATH}}
             
-            # CORS Settings
-            CORS_ORIGIN=${{secrets.CORS_ORIGIN}}
-            
-            # Session Settings
-            SESSION_SECRET=${{secrets.SESSION_SECRET}}
+            # CORS
+            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             EOF
-
-            # export to shell
+            
+            # Set AWS credentials
             export AWS_REGION=${{ secrets.AWS_REGION }}
             export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-            # deploy with docker
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-            sudo docker-compose stop gamecast-server
-            sudo docker-compose rm -f gamecast-server
-            sudo docker images --filter=reference="*/gamecast-server-${{ matrix.environment }}:*" -q | xargs -r sudo docker rmi -f
+            
+            # Login to ECR and deploy
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ env.REGISTRY }}
+            
+            # Stop existing container gracefully
+            sudo docker-compose stop gamecast-server || true
+            sudo docker-compose rm -f gamecast-server || true
+            
+            # Clean up old images
+            sudo docker images --filter=reference="${{ env.REGISTRY }}/${{ env.REPOSITORY }}" --format="table {{.Repository}}:{{.Tag}}" | grep -v "${{ needs.set-environment.outputs.version }}" | tail -n +2 | xargs -r sudo docker rmi || true
+            
+            # Deploy new version
             sudo docker-compose up -d gamecast-server
+            
+            # Wait for service to be ready
+            sleep 30
+            
+            # Health check
+            for i in {1..10}; do
+              if curl -f http://localhost:3000/health; then
+                echo "Deployment successful!"
+                exit 0
+              fi
+              echo "Waiting for service to be ready... ($i/10)"
+              sleep 10
+            done
+            
+            echo "Health check failed, rolling back..."
+            if [ -f docker-compose.backup.yml ]; then
+              cp docker-compose.backup.yml docker-compose.yml
+              cp .env.backup .env
+              sudo docker-compose up -d gamecast-server
+            fi
+            exit 1
+      
+      - name: Notify deployment status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Post-deployment verification
+  post-deploy-test:
+    runs-on: ubuntu-latest
+    needs: [ deploy ]
+    if: always() && needs.deploy.result == 'success'
+    strategy:
+      matrix:
+        environment: [ "${{ needs.set-environment.outputs.environment }}" ]
+    environment: ${{ matrix.environment }}
+    
+    steps:
+      - name: Run smoke tests
+        run: |
+          # Health check
+          curl -f ${{ secrets.APP_URL }}/health
+          
+          # API availability check
+          curl -f ${{ secrets.APP_URL }}/
+          
+          echo "Smoke tests passed!"
+
+  # Cleanup on failure
+  cleanup-on-failure:
+    runs-on: ubuntu-latest
+    needs: [ deploy ]
+    if: failure()
+    steps:
+      - name: Cleanup failed deployment
+        run: |
+          echo "Deployment failed, cleanup process can be added here"
+          # Add cleanup logic if needed
