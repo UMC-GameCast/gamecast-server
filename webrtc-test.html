@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GameCast WebRTC 테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #666;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.waiting {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        #log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 4px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .video-container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .video-box {
+            flex: 1;
+            min-width: 300px;
+        }
+        video {
+            width: 100%;
+            height: 200px;
+            background-color: #000;
+            border-radius: 8px;
+        }
+        .room-info {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .participants {
+            background-color: #f0f8f0;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .participant {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: white;
+            border-radius: 4px;
+            border-left: 4px solid #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 GameCast WebRTC 테스트</h1>
+        
+        <!-- 연결 상태 -->
+        <div id="connectionStatus" class="status disconnected">
+            🔴 서버에 연결되지 않음
+        </div>
+
+        <!-- 1. 방 생성 섹션 -->
+        <div class="section">
+            <h3>📋 1. 방 생성</h3>
+            <div class="form-group">
+                <label for="roomName">방 이름:</label>
+                <input type="text" id="roomName" placeholder="테스트 방" value="WebRTC 테스트 방">
+            </div>
+            <div class="form-group">
+                <label for="hostNickname">방장 닉네임:</label>
+                <input type="text" id="hostNickname" placeholder="방장 닉네임" value="테스트방장">
+            </div>
+            <div class="form-group">
+                <label for="maxCapacity">최대 인원:</label>
+                <select id="maxCapacity">
+                    <option value="2">2명</option>
+                    <option value="3">3명</option>
+                    <option value="4" selected>4명</option>
+                    <option value="5">5명</option>
+                </select>
+            </div>
+            <button onclick="createRoom()">방 생성</button>
+        </div>
+
+        <!-- 2. 방 참여 섹션 -->
+        <div class="section">
+            <h3>🚪 2. 방 참여</h3>
+            <div class="form-group">
+                <label for="joinRoomCode">방 코드:</label>
+                <input type="text" id="joinRoomCode" placeholder="6자리 코드 입력" maxlength="6">
+            </div>
+            <div class="form-group">
+                <label for="guestNickname">닉네임:</label>
+                <input type="text" id="guestNickname" placeholder="게스트 닉네임" value="테스트게스트">
+            </div>
+            <button onclick="joinRoom()">방 참여</button>
+            <button onclick="leaveRoom()" disabled id="leaveBtn">방 나가기</button>
+        </div>
+
+        <!-- 3. 방 정보 -->
+        <div id="roomInfo" class="room-info" style="display: none;">
+            <h3>🏠 방 정보</h3>
+            <div id="roomDetails"></div>
+        </div>
+
+        <!-- 4. 참여자 목록 -->
+        <div id="participantsInfo" class="participants" style="display: none;">
+            <h3>👥 참여자 목록</h3>
+            <div id="participantsList"></div>
+        </div>
+
+        <!-- 5. WebRTC 테스트 -->
+        <div class="section">
+            <h3>🎥 3. WebRTC 연결 테스트</h3>
+            <button onclick="startLocalVideo()" id="startVideoBtn">비디오 시작</button>
+            <button onclick="stopLocalVideo()" disabled id="stopVideoBtn">비디오 중지</button>
+            <button onclick="connectToRoom()" disabled id="connectBtn">방에 WebRTC 연결</button>
+            
+            <div class="video-container">
+                <div class="video-box">
+                    <h4>내 화면</h4>
+                    <video id="localVideo" autoplay muted></video>
+                </div>
+                <div class="video-box">
+                    <h4>상대방 화면</h4>
+                    <video id="remoteVideo" autoplay></video>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. 로그 -->
+        <div class="section">
+            <h3>📝 로그</h3>
+            <div id="log"></div>
+            <button onclick="clearLog()">로그 지우기</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket = null;
+        let localStream = null;
+        let peerConnection = null;
+        let currentRoomCode = null;
+        let sessionId = null;
+        let guestUserId = null;
+
+        // UUID 생성
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // 로그 함수
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+        }
+
+        // 서버 연결
+        function connectToServer() {
+            socket = io('http://localhost:8889');
+            
+            socket.on('connect', () => {
+                log('✅ 서버에 연결되었습니다.');
+                updateConnectionStatus(true);
+            });
+
+            socket.on('disconnect', () => {
+                log('❌ 서버 연결이 끊어졌습니다.');
+                updateConnectionStatus(false);
+            });
+
+            socket.on('room-joined', (data) => {
+                log(`🎉 방 참여 성공: ${JSON.stringify(data)}`);
+                currentRoomCode = data.roomCode;
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('leaveBtn').disabled = false;
+                updateRoomInfo(data);
+            });
+
+            socket.on('user-joined', (data) => {
+                log(`👋 새 사용자 참여: ${data.nickname}`);
+                updateParticipants(data.participants);
+            });
+
+            socket.on('user-left', (data) => {
+                log(`👋 사용자 나감: ${data.nickname}`);
+                updateParticipants(data.participants);
+            });
+
+            socket.on('offer', (data) => {
+                log('📞 Offer 수신');
+                handleReceiveOffer(data);
+            });
+
+            socket.on('answer', (data) => {
+                log('📞 Answer 수신');
+                handleReceiveAnswer(data);
+            });
+
+            socket.on('ice-candidate', (data) => {
+                log('🧊 ICE Candidate 수신');
+                handleReceiveIceCandidate(data);
+            });
+
+            socket.on('error', (error) => {
+                log(`❌ 에러: ${error.message}`);
+            });
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusElement = document.getElementById('connectionStatus');
+            if (connected) {
+                statusElement.className = 'status connected';
+                statusElement.textContent = '🟢 서버에 연결됨';
+            } else {
+                statusElement.className = 'status disconnected';
+                statusElement.textContent = '🔴 서버에 연결되지 않음';
+            }
+        }
+
+        // 방 생성
+        async function createRoom() {
+            if (!sessionId) sessionId = generateUUID();
+            
+            const roomData = {
+                room_name: document.getElementById('roomName').value || '테스트 방',
+                host_session_id: sessionId,
+                host_nickname: document.getElementById('hostNickname').value || '테스트방장',
+                max_capacity: parseInt(document.getElementById('maxCapacity').value)
+            };
+
+            try {
+                log('🏗️ 방 생성 중...');
+                const response = await fetch('http://localhost:8889/api/rooms', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(roomData)
+                });
+
+                const result = await response.json();
+                
+                if (result.resultType === 'SUCCESS') {
+                    log(`✅ 방 생성 성공! 코드: ${result.success.roomCode}`);
+                    document.getElementById('joinRoomCode').value = result.success.roomCode;
+                    guestUserId = result.success.hostGuestId;
+                    
+                    // 자동으로 WebSocket 방 참여
+                    if (socket) {
+                        joinWebSocketRoom(result.success.roomCode, guestUserId, roomData.host_nickname);
+                    }
+                } else {
+                    log(`❌ 방 생성 실패: ${result.error.reason}`);
+                }
+            } catch (error) {
+                log(`❌ 방 생성 오류: ${error.message}`);
+            }
+        }
+
+        // 방 참여
+        async function joinRoom() {
+            const roomCode = document.getElementById('joinRoomCode').value;
+            if (!roomCode) {
+                alert('방 코드를 입력해주세요.');
+                return;
+            }
+
+            if (!sessionId) sessionId = generateUUID();
+            
+            const joinData = {
+                room_code: roomCode,
+                session_id: sessionId,
+                nickname: document.getElementById('guestNickname').value || '테스트게스트'
+            };
+
+            try {
+                log('🚪 방 참여 중...');
+                const response = await fetch('http://localhost:8889/api/rooms/join', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(joinData)
+                });
+
+                const result = await response.json();
+                
+                if (result.resultType === 'SUCCESS') {
+                    log(`✅ 방 참여 성공!`);
+                    guestUserId = result.success.guestUserId;
+                    
+                    // WebSocket 방 참여
+                    if (socket) {
+                        joinWebSocketRoom(roomCode, guestUserId, joinData.nickname);
+                    }
+                } else {
+                    log(`❌ 방 참여 실패: ${result.error.reason}`);
+                }
+            } catch (error) {
+                log(`❌ 방 참여 오류: ${error.message}`);
+            }
+        }
+
+        // WebSocket 방 참여
+        function joinWebSocketRoom(roomCode, guestUserId, nickname) {
+            if (!socket) {
+                log('❌ 서버에 연결되지 않았습니다.');
+                return;
+            }
+
+            socket.emit('join-room', {
+                roomCode: roomCode,
+                guestUserId: guestUserId,
+                nickname: nickname
+            });
+
+            log(`🔌 WebSocket 방 참여 요청: ${roomCode}`);
+        }
+
+        // 방 나가기
+        function leaveRoom() {
+            if (socket && currentRoomCode) {
+                socket.emit('leave-room', { roomCode: currentRoomCode });
+                log('🚪 방을 나갔습니다.');
+                
+                currentRoomCode = null;
+                guestUserId = null;
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('leaveBtn').disabled = true;
+                
+                hideRoomInfo();
+            }
+        }
+
+        // 비디오 시작
+        async function startLocalVideo() {
+            try {
+                log('📹 로컬 비디오 시작...');
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('startVideoBtn').disabled = true;
+                document.getElementById('stopVideoBtn').disabled = false;
+                
+                log('✅ 로컬 비디오가 시작되었습니다.');
+            } catch (error) {
+                log(`❌ 비디오 시작 실패: ${error.message}`);
+            }
+        }
+
+        // 비디오 중지
+        function stopLocalVideo() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+                document.getElementById('localVideo').srcObject = null;
+                document.getElementById('startVideoBtn').disabled = false;
+                document.getElementById('stopVideoBtn').disabled = true;
+                log('⏹️ 로컬 비디오가 중지되었습니다.');
+            }
+        }
+
+        // WebRTC 연결
+        async function connectToRoom() {
+            if (!localStream) {
+                alert('먼저 비디오를 시작해주세요.');
+                return;
+            }
+
+            log('🔗 WebRTC 연결 시작...');
+            
+            // RTCPeerConnection 생성
+            peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+
+            // 로컬 스트림 추가
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            // 원격 스트림 처리
+            peerConnection.ontrack = (event) => {
+                log('📺 원격 스트림 수신');
+                document.getElementById('remoteVideo').srcObject = event.streams[0];
+            };
+
+            // ICE Candidate 처리
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate && socket) {
+                    socket.emit('ice-candidate', {
+                        candidate: event.candidate,
+                        targetSocketId: 'broadcast' // 실제로는 특정 대상 지정
+                    });
+                    log('🧊 ICE Candidate 전송');
+                }
+            };
+
+            // Offer 생성 및 전송
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                if (socket) {
+                    socket.emit('offer', {
+                        offer: offer,
+                        targetSocketId: 'broadcast' // 실제로는 특정 대상 지정
+                    });
+                    log('📞 Offer 전송');
+                }
+            } catch (error) {
+                log(`❌ Offer 생성 실패: ${error.message}`);
+            }
+        }
+
+        // Offer 수신 처리
+        async function handleReceiveOffer(data) {
+            if (!peerConnection) return;
+            
+            try {
+                await peerConnection.setRemoteDescription(data.offer);
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                if (socket) {
+                    socket.emit('answer', {
+                        answer: answer,
+                        targetSocketId: data.senderSocketId
+                    });
+                    log('📞 Answer 전송');
+                }
+            } catch (error) {
+                log(`❌ Offer 처리 실패: ${error.message}`);
+            }
+        }
+
+        // Answer 수신 처리
+        async function handleReceiveAnswer(data) {
+            if (!peerConnection) return;
+            
+            try {
+                await peerConnection.setRemoteDescription(data.answer);
+                log('✅ Answer 처리 완료');
+            } catch (error) {
+                log(`❌ Answer 처리 실패: ${error.message}`);
+            }
+        }
+
+        // ICE Candidate 수신 처리
+        async function handleReceiveIceCandidate(data) {
+            if (!peerConnection) return;
+            
+            try {
+                await peerConnection.addIceCandidate(data.candidate);
+                log('🧊 ICE Candidate 추가 완료');
+            } catch (error) {
+                log(`❌ ICE Candidate 처리 실패: ${error.message}`);
+            }
+        }
+
+        // 방 정보 업데이트
+        function updateRoomInfo(roomData) {
+            const roomInfoElement = document.getElementById('roomInfo');
+            const roomDetailsElement = document.getElementById('roomDetails');
+            
+            roomDetailsElement.innerHTML = `
+                <p><strong>방 코드:</strong> ${roomData.roomCode}</p>
+                <p><strong>방 이름:</strong> ${roomData.roomName || '알 수 없음'}</p>
+                <p><strong>현재 인원:</strong> ${roomData.currentCapacity || 1}/${roomData.maxCapacity || 4}</p>
+                <p><strong>상태:</strong> ${roomData.roomState || 'waiting'}</p>
+            `;
+            
+            roomInfoElement.style.display = 'block';
+        }
+
+        // 참여자 목록 업데이트
+        function updateParticipants(participants) {
+            const participantsElement = document.getElementById('participantsInfo');
+            const participantsListElement = document.getElementById('participantsList');
+            
+            if (participants && participants.length > 0) {
+                participantsListElement.innerHTML = participants.map(p => `
+                    <div class="participant">
+                        <strong>${p.nickname}</strong> (${p.role})
+                        <br><small>참여 시간: ${new Date(p.joinedAt).toLocaleTimeString()}</small>
+                    </div>
+                `).join('');
+                
+                participantsElement.style.display = 'block';
+            }
+        }
+
+        function hideRoomInfo() {
+            document.getElementById('roomInfo').style.display = 'none';
+            document.getElementById('participantsInfo').style.display = 'none';
+        }
+
+        // 페이지 로드 시 서버 연결
+        window.onload = function() {
+            log('🚀 GameCast WebRTC 테스트 클라이언트 시작');
+            connectToServer();
+        };
+
+        // 페이지 종료 시 정리
+        window.onbeforeunload = function() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (socket) {
+                socket.disconnect();
+            }
+        };
+    </script>
+</body>
+</html>

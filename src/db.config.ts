@@ -1,4 +1,11 @@
-// 임시 데이터베이스 설정 파일 (실제 Prisma 설정 필요)
-export const prisma = {
-  // Prisma client 인스턴스
-};
+import { PrismaClient } from '@prisma/client';
+
+// Prisma Client 인스턴스 생성
+export const prisma = new PrismaClient({
+  log: ['query', 'info', 'warn', 'error'],
+});
+
+// 앱 종료 시 Prisma Client 연결 해제
+process.on('beforeExit', async () => {
+  await prisma.$disconnect();
+});

@@ -59,24 +59,6 @@ services:
     networks:
       - gamecast-network
 
-  # Redis (향후 세션 관리용)
-  redis:
-    image: redis:7-alpine
-    container_name: gamecast-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - gamecast-network
-
   # 테스트 클라이언트 (선택적)
   test-client:
     build:
@@ -90,24 +72,6 @@ services:
         condition: service_healthy
     profiles:
       - test
-    networks:
-      - gamecast-network
-
-  # Nginx (리버스 프록시, 선택적)
-  nginx:
-    image: nginx:alpine
-    container_name: gamecast-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - gamecast-api
-    profiles:
-      - production
     networks:
       - gamecast-network
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../middlewares/error.middleware.js';
-import { BadRequestError, NotFoundError } from '../errors/custom.errors.js';
+import { BadRequestError, NotFoundError } from '../errors/errors.js';
 
 const router = Router();
 

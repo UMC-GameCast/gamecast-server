@@ -1,0 +1,6 @@
+{
+  "room_name": "테스트 방",
+  "max_capacity": 4,
+  "host_session_id": "test-session-123",
+  "host_nickname": "테스트 호스트"
+}

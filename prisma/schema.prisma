@@ -1,0 +1,448 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 기존 모델들은 그대로 유지...
+model Session {
+  id        String   @id
+  sid       String   @unique
+  data      String
+  expiresAt DateTime
+}
+
+// GameCast 관련 모델들 추가
+
+model GuestUser {
+  id             String    @id @default(uuid()) @map("id")
+  sessionId      String    @unique @map("session_id") @db.VarChar(255)
+  nickname       String    @map("nickname") @db.VarChar(50)
+  roomId         String?   @map("room_id") @db.VarChar(36)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastActiveAt   DateTime  @default(now()) @updatedAt @map("last_active_at")
+  expiresAt      DateTime? @map("expires_at")
+  userSettings   Json?     @map("user_settings")
+
+  // 관계 설정
+  room                    Room?                     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  hostingRooms           Room[]                    @relation("HostedRooms")
+  participations         RoomParticipant[]
+  sessionParticipations  SessionParticipant[]
+  characters             GuestCharacter[]
+  recordingInitiated     RecordingSession[]
+  evaluations            ServiceEvaluation[]
+  mediaAssets            MediaAsset[]
+  additionalSourceClips  AdditionalSourceClip[]
+
+  @@unique([roomId, nickname], map: "idx_room_unique_nickname")
+  @@index([expiresAt], map: "idx_guest_users_expires_at")
+  @@map("guest_users")
+}
+
+model Room {
+  id              String    @id @default(uuid()) @map("id")
+  roomCode        String    @unique @map("room_code") @db.VarChar(8)
+  hostGuestId     String?   @map("host_guest_id") @db.VarChar(36)
+  roomName        String    @map("room_name") @db.VarChar(100)
+  maxCapacity     Int       @default(5) @map("max_capacity")
+  currentCapacity Int       @default(0) @map("current_capacity")
+  roomState       RoomState @default(waiting) @map("room_state")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime? @map("expires_at")
+  roomSettings    Json?     @map("room_settings")
+
+  // 관계 설정
+  hostGuest         GuestUser?         @relation("HostedRooms", fields: [hostGuestId], references: [id], onDelete: SetNull)
+  guestUsers        GuestUser[]
+  participants      RoomParticipant[]
+  voiceSessions     VoiceSession[]
+  recordingSessions RecordingSession[]
+  evaluations       ServiceEvaluation[]
+  qualityMetrics    QualityMetric[]
+
+  @@index([roomCode], map: "idx_rooms_code")
+  @@index([expiresAt], map: "idx_rooms_expires_at")
+  @@map("rooms")
+}
+
+model RoomParticipant {
+  id                String   @id @default(uuid()) @map("id")
+  roomId            String   @map("room_id") @db.VarChar(36)
+  guestUserId       String   @map("guest_user_id") @db.VarChar(36)
+  role              UserRole @default(participant) @map("role")
+  joinedAt          DateTime @default(now()) @map("joined_at")
+  leftAt            DateTime? @map("left_at")
+  isActive          Boolean  @default(true) @map("is_active")
+  preparationStatus Json?    @map("preparation_status")
+
+  // 관계 설정
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  guestUser GuestUser @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, guestUserId])
+  @@map("room_participants")
+}
+
+model VoiceSession {
+  id               String    @id @default(uuid()) @map("id")
+  roomId           String    @map("room_id") @db.VarChar(36)
+  sessionType      String    @default("voice_chat") @map("session_type") @db.VarChar(20)
+  startedAt        DateTime  @default(now()) @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  participantCount Int?      @map("participant_count")
+  sessionMetadata  Json?     @map("session_metadata")
+  recordingEnabled Boolean   @default(false) @map("recording_enabled")
+
+  // 관계 설정
+  room         Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  participants SessionParticipant[]
+
+  @@map("voice_sessions")
+}
+
+model SessionParticipant {
+  sessionId          String    @map("session_id") @db.VarChar(36)
+  guestUserId        String    @map("guest_user_id") @db.VarChar(36)
+  joinedAt           DateTime  @default(now()) @map("joined_at")
+  leftAt             DateTime? @map("left_at")
+  audioQualityStats  Json?     @map("audio_quality_stats")
+
+  // 관계 설정
+  session   VoiceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  guestUser GuestUser    @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, guestUserId])
+  @@map("session_participants")
+}
+
+model CharacterCategory {
+  id          String @id @default(uuid()) @map("id")
+  name        String @map("name") @db.VarChar(50)
+  displayOrder Int   @map("display_order")
+  isRequired  Boolean @default(false) @map("is_required")
+
+  // 관계 설정
+  components CharacterComponent[]
+
+  @@map("character_categories")
+}
+
+model CharacterComponent {
+  id               String  @id @default(uuid()) @map("id")
+  categoryId       String  @map("category_id") @db.VarChar(36)
+  name             String  @map("name") @db.VarChar(100)
+  assetFilePath    String  @map("asset_file_path") @db.VarChar(512)
+  previewImagePath String? @map("preview_image_path") @db.VarChar(512)
+  isDefault        Boolean @default(false) @map("is_default")
+  metadata         Json?   @map("metadata")
+
+  // 관계 설정
+  category       CharacterCategory              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  customizations GuestCharacterCustomization[]
+
+  @@map("character_components")
+}
+
+model GuestCharacter {
+  id                String   @id @default(uuid()) @map("id")
+  guestUserId       String   @map("guest_user_id") @db.VarChar(36)
+  roomId            String   @map("room_id") @db.VarChar(36)
+  characterName     String?  @map("character_name") @db.VarChar(100)
+  isSetupComplete   Boolean  @default(false) @map("is_setup_complete")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // 관계 설정
+  guestUser      GuestUser                     @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+  customizations GuestCharacterCustomization[]
+
+  @@unique([guestUserId, roomId])
+  @@map("guest_characters")
+}
+
+model GuestCharacterCustomization {
+  characterId        String   @map("character_id") @db.VarChar(36)
+  componentId        String   @map("component_id") @db.VarChar(36)
+  customizationData  Json?    @map("customization_data")
+  appliedAt          DateTime @default(now()) @map("applied_at")
+
+  // 관계 설정
+  character GuestCharacter    @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  component CharacterComponent @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, componentId])
+  @@map("guest_character_customizations")
+}
+
+model RecordingSession {
+  id                 String            @id @default(uuid()) @map("id")
+  roomId             String            @map("room_id") @db.VarChar(36)
+  initiatorGuestId   String?           @map("initiator_guest_id") @db.VarChar(36)
+  sessionName        String?           @map("session_name") @db.VarChar(255)
+  startedAt          DateTime          @default(now()) @map("started_at")
+  endedAt            DateTime?         @map("ended_at")
+  durationSeconds    Int?              @map("duration_seconds")
+  status             RecordingStatus   @default(recording) @map("status")
+  storagePath        String?           @map("storage_path") @db.VarChar(1024)
+  totalFileSizeBytes BigInt            @default(0) @map("total_file_size_bytes")
+  expiresAt          DateTime?         @map("expires_at")
+  recordingSettings  Json?             @map("recording_settings")
+
+  // 관계 설정
+  room                Room                     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  initiatorGuest      GuestUser?               @relation(fields: [initiatorGuestId], references: [id], onDelete: SetNull)
+  mediaAssets         MediaAsset[]
+  highlightAnalyses   HighlightAnalysis[]
+  videoProcessingJobs VideoProcessingJob[]
+  qualityMetrics      QualityMetric[]
+
+  @@index([expiresAt], map: "idx_recording_sessions_expires_at")
+  @@map("recording_sessions")
+}
+
+model MediaAsset {
+  id                  String          @id @default(uuid()) @map("id")
+  recordingSessionId  String          @map("recording_session_id") @db.VarChar(36)
+  guestUserId         String          @map("guest_user_id") @db.VarChar(36)
+  assetType           String          @map("asset_type") @db.VarChar(50)
+  originalFilename    String?         @map("original_filename") @db.VarChar(512)
+  filePath            String          @map("file_path") @db.VarChar(1024)
+  mimeType            String?         @map("mime_type") @db.VarChar(100)
+  fileSizeBytes       BigInt?         @map("file_size_bytes")
+  durationSeconds     Int?            @map("duration_seconds")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  processingStatus    ProcessingStatus @default(pending) @map("processing_status")
+  technicalMetadata   Json?           @map("technical_metadata")
+
+  // 관계 설정
+  recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id], onDelete: Cascade)
+  guestUser        GuestUser        @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+
+  @@map("media_assets")
+}
+
+model HighlightAnalysis {
+  id                  String             @id @default(uuid()) @map("id")
+  recordingSessionId  String             @map("recording_session_id") @db.VarChar(36)
+  analysisAlgorithm   String             @map("analysis_algorithm") @db.VarChar(100)
+  analysisParameters  Json?              @map("analysis_parameters")
+  startedAt           DateTime           @default(now()) @map("started_at")
+  completedAt         DateTime?          @map("completed_at")
+  status              AnalysisStatus     @default(queued) @map("status")
+
+  // 관계 설정
+  recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id], onDelete: Cascade)
+  highlightClips   HighlightClip[]
+
+  @@map("highlight_analysis")
+}
+
+model HighlightClip {
+  id                   String                 @id @default(uuid()) @map("id")
+  analysisId           String                 @map("analysis_id") @db.VarChar(36)
+  clipName             String?                @map("clip_name") @db.VarChar(255)
+  startTimestamp       Decimal                @map("start_timestamp") @db.Decimal(10, 3)
+  endTimestamp         Decimal                @map("end_timestamp") @db.Decimal(10, 3)
+  confidenceScore      Decimal?               @map("confidence_score") @db.Decimal(3, 2)
+  highlightType        HighlightType          @map("highlight_type")
+  detectionFeatures    Json?                  @map("detection_features")
+  mainSourceFilePath   String?                @map("main_source_file_path") @db.VarChar(1024)
+  isSelected           Boolean                @default(false) @map("is_selected")
+  createdAt            DateTime               @default(now()) @map("created_at")
+
+  // 관계 설정
+  analysis              HighlightAnalysis      @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  additionalSourceClips AdditionalSourceClip[]
+  subtitleSessions      SubtitleSession[]
+
+  @@map("highlight_clips")
+}
+
+model AdditionalSourceClip {
+  id              String    @id @default(uuid()) @map("id")
+  highlightClipId String    @map("highlight_clip_id") @db.VarChar(36)
+  guestUserId     String    @map("guest_user_id") @db.VarChar(36)
+  sourceFilePath  String    @map("source_file_path") @db.VarChar(1024)
+  addedAt         DateTime  @default(now()) @map("added_at")
+
+  // 관계 설정
+  highlightClip HighlightClip @relation(fields: [highlightClipId], references: [id], onDelete: Cascade)
+  guestUser     GuestUser     @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+
+  @@map("additional_source_clips")
+}
+
+model SubtitleSession {
+  id               String            @id @default(uuid()) @map("id")
+  highlightClipId  String            @map("highlight_clip_id") @db.VarChar(36)
+  languageCode     String            @default("ko") @map("language_code") @db.VarChar(10)
+  sttProvider      String            @default("RTZR") @map("stt_provider") @db.VarChar(50)
+  processingStatus ProcessingStatus  @default(pending) @map("processing_status")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  // 관계 설정
+  highlightClip     HighlightClip      @relation(fields: [highlightClipId], references: [id], onDelete: Cascade)
+  subtitleSegments  SubtitleSegment[]
+
+  @@map("subtitle_sessions")
+}
+
+model SubtitleSegment {
+  id                String       @id @default(uuid()) @map("id")
+  subtitleSessionId String       @map("subtitle_session_id") @db.VarChar(36)
+  guestUserId       String       @map("guest_user_id") @db.VarChar(36)
+  startTimestamp    Decimal      @map("start_timestamp") @db.Decimal(10, 3)
+  endTimestamp      Decimal      @map("end_timestamp") @db.Decimal(10, 3)
+  originalText      String?      @map("original_text") @db.Text
+  editedText        String?      @map("edited_text") @db.Text
+  confidenceScore   Decimal?     @map("confidence_score") @db.Decimal(3, 2)
+  sequenceNumber    Int          @map("sequence_number")
+  subtitleStyle     SubtitleStyle @default(standard) @map("subtitle_style")
+  emotionType       EmotionType? @map("emotion_type")
+  isMainSpeaker     Boolean      @default(false) @map("is_main_speaker")
+
+  // 관계 설정
+  subtitleSession SubtitleSession @relation(fields: [subtitleSessionId], references: [id], onDelete: Cascade)
+
+  @@map("subtitle_segments")
+}
+
+model VideoProcessingJob {
+  id                   String    @id @default(uuid()) @map("id")
+  recordingSessionId   String    @map("recording_session_id") @db.VarChar(36)
+  jobType              String    @map("job_type") @db.VarChar(50)
+  inputFilePaths       Json      @map("input_file_paths")
+  outputFilePath       String?   @map("output_file_path") @db.VarChar(1024)
+  ffmpegCommand        String?   @map("ffmpeg_command") @db.Text
+  processingPreset     String?   @map("processing_preset") @db.VarChar(100)
+  status               String    @default("queued") @map("status") @db.VarChar(20)
+  progressPercentage   Int       @default(0) @map("progress_percentage")
+  startedAt            DateTime? @map("started_at")
+  completedAt          DateTime? @map("completed_at")
+  clientSessionId      String?   @map("client_session_id") @db.VarChar(255)
+  errorLog             String?   @map("error_log") @db.Text
+  processingMetadata   Json?     @map("processing_metadata")
+
+  // 관계 설정
+  recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id], onDelete: Cascade)
+
+  @@map("video_processing_jobs")
+}
+
+model ServiceEvaluation {
+  id                            String       @id @default(uuid()) @map("id")
+  roomId                        String       @map("room_id") @db.VarChar(36)
+  guestUserId                   String       @map("guest_user_id") @db.VarChar(36)
+  evaluatorRole                 UserRole     @map("evaluator_role")
+  overallSatisfaction          Int?         @map("overall_satisfaction")
+  audioQualityRating           Int?         @map("audio_quality_rating")
+  videoQualityRating           Int?         @map("video_quality_rating")
+  easeOfUseRating              Int?         @map("ease_of_use_rating")
+  editingExperienceRating      Int?         @map("editing_experience_rating")
+  highlightDetectionAccuracy   Int?         @map("highlight_detection_accuracy")
+  subtitleQualityRating        Int?         @map("subtitle_quality_rating")
+  positiveFeedback             String?      @map("positive_feedback") @db.Text
+  improvementSuggestions       String?      @map("improvement_suggestions") @db.Text
+  sessionDurationMinutes       Int?         @map("session_duration_minutes")
+  totalParticipants            Int?         @map("total_participants")
+  technicalIssuesEncountered   Json?        @map("technical_issues_encountered")
+  createdAt                    DateTime     @default(now()) @map("created_at")
+
+  // 관계 설정
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  guestUser GuestUser @relation(fields: [guestUserId], references: [id], onDelete: Cascade)
+
+  @@map("service_evaluations")
+}
+
+model QualityMetric {
+  id                     String            @id @default(uuid()) @map("id")
+  roomId                 String?           @map("room_id") @db.VarChar(36)
+  recordingSessionId     String?           @map("recording_session_id") @db.VarChar(36)
+  metricType             String            @map("metric_type") @db.VarChar(50)
+  metricValue            Decimal           @map("metric_value") @db.Decimal(10, 3)
+  measurementTimestamp   DateTime          @default(now()) @map("measurement_timestamp")
+  contextData            Json?             @map("context_data")
+
+  // 관계 설정
+  room             Room?             @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  recordingSession RecordingSession? @relation(fields: [recordingSessionId], references: [id], onDelete: SetNull)
+
+  @@map("quality_metrics")
+}
+
+model IpAccessLog {
+  id          BigInt   @id @default(autoincrement()) @map("id")
+  ipAddress   String   @map("ip_address") @db.VarChar(45)
+  roomCode    String?  @map("room_code") @db.VarChar(8)
+  accessCount Int      @default(1) @map("access_count")
+  firstAccess DateTime @default(now()) @map("first_access")
+  lastAccess  DateTime @default(now()) @updatedAt @map("last_access")
+  isBlocked   Boolean  @default(false) @map("is_blocked")
+
+  @@unique([ipAddress, roomCode], map: "idx_ip_room_unique")
+  @@index([ipAddress], map: "idx_ip_access_log_ip")
+  @@index([isBlocked], map: "idx_ip_access_log_blocked")
+  @@map("ip_access_log")
+}
+
+// Enums
+enum RoomState {
+  waiting
+  active
+  recording
+  processing
+  completed
+  expired
+}
+
+enum UserRole {
+  host
+  participant
+}
+
+enum RecordingStatus {
+  recording
+  processing
+  completed
+  failed
+  expired
+}
+
+enum ProcessingStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum AnalysisStatus {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum HighlightType {
+  voice_spike
+  laughter
+}
+
+enum SubtitleStyle {
+  standard
+  character
+  emotional
+}
+
+enum EmotionType {
+  joy
+  sad
+  angry
+  frustrated
+}

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { BaseError } from '../errors/custom.errors.js';
+import { BaseError } from '../errors/errors.js';
 import logger from '../logger.js';
 import { createFailResponse } from '../utils/response.util.js';
 

@@ -1,12 +1,11 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
-import path from "path";
 import { createServer } from "http";
 import morgan from "morgan";
 import logger, { stream } from "./logger.js";
 import compression from "compression";
-import swaggerJSDoc from "swagger-jsdoc";
+import swaggerAutogen from "swagger-autogen";
 import swaggerUiExpress from "swagger-ui-express";
 import { PrismaSessionStore } from "@quixo3/prisma-session-store";
 import session from "express-session";
@@ -20,13 +19,11 @@ import roomRoutes from "./routes/room.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
-import { swaggerConfig } from "./config/swagger.config";
+import { swaggerConfig } from "./config/swagger.config.js";
 
 // 환경변수 로딩 - 개발 환경에서는 .env.dev 파일 사용
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.dev';
-console.log('Loading env file:', envFile);
 dotenv.config({ path: envFile });
-console.log('PORT from env:', process.env.PORT);
 
 // 필요한 환경변수 확인
 if (!process.env.DATABASE_URL) {
@@ -42,7 +39,7 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 const app = express();
-const port = process.env.PORT || 8889;
+const port = process.env.PORT || 8888;
 
 // HTTP 서버 생성 (Socket.IO와 함께 사용)
 const server = createServer(app);
@@ -119,26 +116,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// 세션 초기화 엔드포인트 (테스트용)
-app.get('/init-session', (req, res) => {
-  req.session.initialized = true;
-  res.json({
-    message: 'Session initialized',
-    sessionID: req.sessionID,
-    session: req.session
-  });
-});
-
 // GameCast API 라우트
 app.use("/api/rooms", roomRoutes);
-
-// WebRTC 테스트 페이지
-app.get('/webrtc-test', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'webrtc-test.html'));
-});
-
-// 정적 파일 서빙 (Socket.IO 클라이언트 등)
-app.use(express.static('public'));
 
 // 헬스체크 엔드포인트
 app.get('/health', (req, res) => {
@@ -153,20 +132,12 @@ app.get('/health', (req, res) => {
 });
 
 // Swagger 문서 설정
-const swaggerOptions = {
-  definition: swaggerConfig,
-  apis: [
-    'src/routes/room.routes.ts',
-    './src/routes/*.ts'
-  ], // JSDoc 주석이 있는 파일 경로
-};
+const swaggerDocument = swaggerAutogen.generate({
+  openapi: '3.0.0',
+  ...swaggerConfig
+});
 
-const swaggerSpecs = swaggerJSDoc(swaggerOptions);
-
-// 디버깅을 위해 생성된 스펙 로그 출력
-console.log('Generated Swagger specs paths:', Object.keys(swaggerSpecs.paths || {}));
-
-app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpecs, {
+app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerDocument, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: 'GameCast API Documentation'
@@ -197,18 +168,13 @@ app.use('*', (req, res) => {
 });
 
 // 서버 시작
-server.listen(port, '0.0.0.0', () => {
+server.listen(port, () => {
   logger.info(`
 🚀 GameCast API 서버가 시작되었습니다!
 📍 포트: ${port}
 🌍 환경: ${process.env.NODE_ENV || 'development'}
-🔗 로컬 API: http://localhost:${port}/api/rooms
-🔗 네트워크 API: http://192.168.75.1:${port}/api/rooms
-📚 로컬 문서: http://localhost:${port}/docs
-📚 네트워크 문서: http://192.168.75.1:${port}/docs
-🧪 WebRTC 테스트: http://192.168.75.1:${port}/webrtc-test
+🔗 API: http://localhost:${port}/api/rooms
+📚 문서: http://localhost:${port}/docs
 💊 헬스체크: http://localhost:${port}/health
   `);
 });
-
-export default app;
