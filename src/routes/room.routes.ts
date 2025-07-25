@@ -1,8 +1,8 @@
 import express from 'express';
-import { RoomController } from '../controllers/room.controller';
-import { validateRequest } from '../middlewares/validation.middleware';
-import { createRoomSchema, joinRoomSchema, updatePreparationSchema } from '../validators/room.validator';
-import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware';
+import { RoomController } from '../controllers/room.controller.js';
+import { validateRequest } from '../middlewares/validation.middleware.js';
+import { createRoomSchema, joinRoomSchema, updatePreparationSchema } from '../validators/room.validator.js';
+import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware.js';
 
 const router = express.Router();
 const roomController = new RoomController();

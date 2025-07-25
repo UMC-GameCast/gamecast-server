@@ -61,16 +61,15 @@ export class RoomController {
 
   /**
    * 방 입장
-   * POST /api/rooms/:roomCode/join
+   * POST /api/rooms/join
    */
   async joinRoom(req: Request, res: Response, next: NextFunction) {
     try {
-      const { roomCode } = req.params;
-      const { nickname } = req.body;
+      const { roomCode, nickname } = req.body;
       const sessionId = req.sessionID;
 
-      if (!sessionId || !nickname) {
-        throw new BadRequestError('세션 정보와 닉네임이 필요합니다.');
+      if (!roomCode || !sessionId || !nickname) {
+        throw new BadRequestError('방 코드, 세션 정보, 닉네임이 모두 필요합니다.');
       }
 
       logger.info('방 입장 요청', { 
@@ -94,7 +93,7 @@ export class RoomController {
     } catch (error) {
       logger.error('방 입장 실패', { 
         error: error instanceof Error ? error.message : '알 수 없는 오류',
-        roomCode: req.params.roomCode 
+        roomCode: req.body.roomCode 
       });
       next(error);
     }

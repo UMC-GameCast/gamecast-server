@@ -1,4 +1,6 @@
-import { PrismaClient, Room, GuestUser, RoomState, UserRole } from '@prisma/client';
+import pkg from '@prisma/client';
+const { PrismaClient, RoomState, UserRole } = pkg;
+import type { Room, GuestUser, RoomState as RoomStateType, UserRole as UserRoleType } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError, NotFoundError, ConflictError } from '../errors/errors.js';
 
@@ -304,6 +306,8 @@ export class RoomService {
    * 방 참여
    */
   async joinRoom(roomCode: string, sessionId: string, nickname: string) {
+    console.log(`🎯 joinRoom 호출 - roomCode: "${roomCode}", sessionId: "${sessionId}", nickname: "${nickname}"`);
+    
     // 트랜잭션으로 방 참여 처리
     return await prisma.$transaction(async (tx) => {
       // 1. 방 존재 및 참여 가능 여부 확인
@@ -326,11 +330,16 @@ export class RoomService {
         }
       });
 
+      console.log(`🔍 DB 조회 결과 - roomCode: "${room?.roomCode}", participants: ${room?.participants.length || 0}, maxCapacity: ${room?.maxCapacity || 0}`);
+
       if (!room) {
         throw new NotFoundError('존재하지 않거나 참여할 수 없는 방입니다.');
       }
 
       // 2. 방 인원 초과 확인
+      console.log(`🔍 방 인원 확인 - roomCode: ${roomCode}, participants: ${room.participants.length}, maxCapacity: ${room.maxCapacity}`);
+      console.log('참여자 목록:', room.participants.map(p => ({ id: p.id, isActive: p.isActive })));
+      
       if (room.participants.length >= room.maxCapacity) {
         throw new ConflictError('방 인원이 가득 찼습니다.');
       }
@@ -731,12 +740,12 @@ export class RoomService {
    */
   async updateRoomState(
     hostGuestId: string, 
-    newState: RoomState
+    newState: RoomStateType
   ): Promise<{
     roomCode: string;
     roomName: string;
-    oldState: RoomState;
-    newState: RoomState;
+    oldState: RoomStateType;
+    newState: RoomStateType;
   }> {
     return await prisma.$transaction(async (tx) => {
       // 1. 방장 권한 확인

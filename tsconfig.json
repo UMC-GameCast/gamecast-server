@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -23,6 +23,14 @@
   "exclude": [
     "node_modules",
     "dist",
-    "tests"
+    "tests",
+    "**/*_backup.ts",
+    "**/*_backup.js",
+    "**/*_broken.ts",
+    "**/*_broken.js",
+    "**/*_clean.ts",
+    "**/*_clean.js",
+    "**/*.backup",
+    "**/*.bak"
   ]
 }

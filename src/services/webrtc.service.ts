@@ -1,6 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import { PrismaClient, RoomState } from '@prisma/client';
+import pkg from '@prisma/client';
+const { PrismaClient, RoomState } = pkg;
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../logger.js';
 
@@ -94,6 +95,16 @@ export class WebRTCService {
       // 준비 상태 업데이트
       socket.on('update-preparation-status', (data: PreparationStatusData) => {
         this.handlePreparationStatusUpdate(socket, data);
+      });
+
+      // 채팅 메시지
+      socket.on('chat-message', (data: { roomCode: string; message: string; timestamp: string }) => {
+        this.handleChatMessage(socket, data);
+      });
+
+      // 방 사용자 목록 요청
+      socket.on('request-room-users', (data: { roomCode: string }) => {
+        this.handleRequestRoomUsers(socket, data);
       });
 
       // 연결 해제
@@ -501,6 +512,75 @@ export class WebRTCService {
 
     } catch (error) {
       logger.error('음성 세션 생성/참여 오류:', error);
+    }
+  }
+
+  private handleChatMessage(socket: Socket, data: { roomCode: string; message: string; timestamp: string }) {
+    try {
+      logger.info(`채팅 메시지 수신: ${socket.id} -> ${data.roomCode}: ${data.message}`);
+      
+      // 방에 있는 사용자인지 확인
+      const roomUsers = this.rooms.get(data.roomCode);
+      if (!roomUsers || !roomUsers.has(socket.id)) {
+        logger.warn(`방에 없는 사용자가 채팅 시도: ${socket.id}`);
+        return;
+      }
+
+      const sender = roomUsers.get(socket.id);
+      if (!sender) {
+        logger.warn(`발신자 정보를 찾을 수 없음: ${socket.id}`);
+        return;
+      }
+
+      // 방의 다른 모든 사용자에게 메시지 전송 (본인 제외)
+      roomUsers.forEach((user, userSocketId) => {
+        if (userSocketId !== socket.id) {
+          this.io.to(userSocketId).emit('chat-message', {
+            roomCode: data.roomCode,
+            message: data.message,
+            timestamp: data.timestamp,
+            senderSocketId: socket.id,
+            senderNickname: sender.nickname,
+            senderGuestUserId: sender.guestUserId
+          });
+        }
+      });
+
+      logger.info(`채팅 메시지 전송 완료: ${sender.nickname} -> ${roomUsers.size - 1}명`);
+
+    } catch (error) {
+      logger.error('채팅 메시지 처리 오류:', error);
+      socket.emit('error', { message: '채팅 메시지 전송에 실패했습니다.' });
+    }
+  }
+
+  private handleRequestRoomUsers(socket: Socket, data: { roomCode: string }) {
+    try {
+      const { roomCode } = data;
+      const roomUsers = this.rooms.get(roomCode);
+      
+      if (!roomUsers) {
+        socket.emit('error', { message: '방을 찾을 수 없습니다.' });
+        return;
+      }
+
+      // 현재 방의 사용자 목록을 배열로 변환
+      const users = Array.from(roomUsers.values()).map(user => ({
+        socketId: user.socketId,
+        guestUserId: user.guestUserId,
+        nickname: user.nickname,
+        isHost: user.isHost,
+        joinedAt: user.joinedAt
+      }));
+
+      // 요청한 클라이언트에게 사용자 목록 전송
+      socket.emit('room-users', users);
+      
+      logger.info(`방 사용자 목록 전송: ${roomCode} -> ${users.length}명`);
+
+    } catch (error) {
+      logger.error('방 사용자 목록 요청 처리 오류:', error);
+      socket.emit('error', { message: '사용자 목록을 가져올 수 없습니다.' });
     }
   }
 

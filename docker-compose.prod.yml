@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: gamecast-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-gamecast123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gamecast}
+      MYSQL_USER: ${MYSQL_USER:-gamecast_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-gamecast_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./database/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - gamecast-network
+
+  # Redis (세션 스토어)
+  redis:
+    image: redis:7-alpine
+    container_name: gamecast-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - gamecast-network
+
+  # GameCast API 서버
+  gamecast-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: gamecast-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8889}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: "mysql://${MYSQL_USER:-gamecast_user}:${MYSQL_PASSWORD:-gamecast_password}@mysql:3306/${MYSQL_DATABASE:-gamecast}"
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-gamecast_user}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-gamecast_password}
+      DB_NAME: ${MYSQL_DATABASE:-gamecast}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_for_production}
+      SESSION_SECRET: ${SESSION_SECRET:-your_super_secret_session_key_for_production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - gamecast-network
+
+  # Nginx 리버스 프록시
+  nginx:
+    image: nginx:alpine
+    container_name: gamecast-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    depends_on:
+      gamecast-api:
+        condition: service_healthy
+    networks:
+      - gamecast-network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  gamecast-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

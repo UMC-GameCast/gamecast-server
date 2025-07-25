@@ -17,10 +17,11 @@ import { rateLimitMiddleware } from "./middlewares/rateLimit.middleware.js";
 
 // GameCast 관련 import
 import roomRoutes from "./routes/room.routes.js";
+import webrtcRoutes from "./routes/webrtc.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
-import { swaggerConfig } from "./config/swagger.config";
+// import { swaggerConfig } from "./config/swagger.config.js";
 
 // 환경변수 로딩 - 개발 환경에서는 .env.dev 파일 사용
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.dev';
@@ -38,8 +39,8 @@ if (!process.env.DATABASE_URL) {
 // passport.use(localStrategy);
 // passport.use(googleStrategy);
 // passport.use(kakaoStrategy);
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
+passport.serializeUser((user: any, done) => done(null, user));
+passport.deserializeUser((user: any, done) => done(null, user));
 
 const app = express();
 const port = process.env.PORT || 8889;
@@ -121,7 +122,7 @@ app.get("/", (req, res) => {
 
 // 세션 초기화 엔드포인트 (테스트용)
 app.get('/init-session', (req, res) => {
-  req.session.initialized = true;
+  (req.session as any).initialized = true;
   res.json({
     message: 'Session initialized',
     sessionID: req.sessionID,
@@ -129,8 +130,20 @@ app.get('/init-session', (req, res) => {
   });
 });
 
+// 세션 상태 확인 엔드포인트
+app.get('/session-info', (req, res) => {
+  res.json({
+    sessionID: req.sessionID,
+    session: req.session,
+    cookies: req.headers.cookie,
+    isAuthenticated: !!(req.session as any).initialized,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // GameCast API 라우트
 app.use("/api/rooms", roomRoutes);
+app.use("/api/webrtc", webrtcRoutes);
 
 // WebRTC 테스트 페이지
 app.get('/webrtc-test', (req, res) => {
@@ -154,9 +167,22 @@ app.get('/health', (req, res) => {
 
 // Swagger 문서 설정
 const swaggerOptions = {
-  definition: swaggerConfig,
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "GameCast Server API",
+      version: "1.0.0",
+      description: "GameCast 실시간 게임 스트리밍 플랫폼 API",
+    },
+    servers: [
+      {
+        url: "http://localhost:8889",
+        description: "개발 서버"
+      }
+    ]
+  },
   apis: [
-    'src/routes/room.routes.ts',
+    './dist/routes/*.js',
     './src/routes/*.ts'
   ], // JSDoc 주석이 있는 파일 경로
 };
@@ -164,7 +190,7 @@ const swaggerOptions = {
 const swaggerSpecs = swaggerJSDoc(swaggerOptions);
 
 // 디버깅을 위해 생성된 스펙 로그 출력
-console.log('Generated Swagger specs paths:', Object.keys(swaggerSpecs.paths || {}));
+console.log('Generated Swagger specs paths:', Object.keys((swaggerSpecs as any).paths || {}));
 
 app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpecs, {
   explorer: true,
@@ -197,7 +223,7 @@ app.use('*', (req, res) => {
 });
 
 // 서버 시작
-server.listen(port, '0.0.0.0', () => {
+server.listen(port, () => {
   logger.info(`
 🚀 GameCast API 서버가 시작되었습니다!
 📍 포트: ${port}

@@ -78,9 +78,20 @@ export const responseMiddleware = (req: any, res: Response, next: any) => {
     return this.json(createSuccessResponse(data));
   };
 
-  // 실패 응답 헬퍼
-  res.error = function(errorCode: string = "unknown", reason: string | null = null, data: any = null) {
-    return this.json(createFailResponse(errorCode, reason, data));
+  // 실패 응답 헬퍼 (오버로드 구현)
+  res.error = function(
+    errorCodeOrError?: string | { errorCode?: string; reason?: string | null; data?: any },
+    reason?: string | null,
+    data: any = null
+  ) {
+    if (typeof errorCodeOrError === 'string') {
+      return this.json(createFailResponse(errorCodeOrError, reason, data));
+    } else if (errorCodeOrError && typeof errorCodeOrError === 'object') {
+      const { errorCode = "unknown", reason: errReason, data: errData } = errorCodeOrError;
+      return this.json(createFailResponse(errorCode, errReason, errData));
+    } else {
+      return this.json(createFailResponse(errorCodeOrError || "unknown", reason, data));
+    }
   };
 
   // 페이지네이션 응답 헬퍼

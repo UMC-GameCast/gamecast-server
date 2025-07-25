@@ -158,13 +158,23 @@ __tests__/
 *.spec.js
 *.spec.ts
 
+# Backup files
+*_backup.ts
+*_backup.js
+*_broken.ts
+*_broken.js
+*_clean.ts
+*_clean.js
+*.backup
+*.bak
+
 # Development and build artifacts
-src/
+# src/ (needed for Docker build)
 dist/
 build/
 
 # Package manager files
-package-lock.json
+# package-lock.json (needed for Docker build)
 yarn.lock
 
 # Docker
