@@ -21,7 +21,6 @@ import webrtcRoutes from "./routes/webrtc.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
-// import { swaggerConfig } from "./config/swagger.config.js";
 
 // 환경변수 로딩 - 개발 환경에서는 .env.dev 파일 사용
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.dev';
@@ -55,16 +54,38 @@ app.use(compression({
   memLevel: 8,
 }));
 
-const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'];
+const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['*'];
 
 // CORS 설정
 app.use(cors({
-  origin: corsOrigins,
+  origin: (origin, callback) => {
+    // 개발 환경에서는 모든 origin 허용
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    
+    // 프로덕션에서는 지정된 origin만 허용
+    if (!origin || corsOrigins.includes('*') || corsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    return callback(new Error('CORS 정책에 의해 차단되었습니다.'), false);
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 }));
+
+// 명시적 OPTIONS 요청 처리
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400'); // 24시간
+  res.status(200).end();
+});
 
 // Rate limiting
 app.use('/api', rateLimitMiddleware.general);
@@ -166,6 +187,9 @@ app.get('/health', (req, res) => {
 });
 
 // Swagger 문서 설정
+const isProduction = process.env.NODE_ENV === 'production';
+const serverUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+
 const swaggerOptions = {
   definition: {
     openapi: "3.0.0",
@@ -176,15 +200,15 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: "http://localhost:8889",
-        description: "개발 서버"
+        url: serverUrl,
+        description: isProduction ? "프로덕션 서버" : "개발 서버"
       }
     ]
   },
   apis: [
-    './dist/routes/*.js',
-    './src/routes/*.ts'
-  ], // JSDoc 주석이 있는 파일 경로
+    './src/routes/*.ts', // TypeScript 소스 파일 (JSDoc 포함)
+    './dist/routes/*.js' // 컴파일된 JavaScript 파일 (백업)
+  ]
 };
 
 const swaggerSpecs = swaggerJSDoc(swaggerOptions);
@@ -195,7 +219,40 @@ console.log('Generated Swagger specs paths:', Object.keys((swaggerSpecs as any).
 app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpecs, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'GameCast API Documentation'
+  customSiteTitle: 'GameCast API Documentation',
+  swaggerOptions: {
+    // 서버 목록 표시
+    servers: [
+      {
+        url: "http://3.37.34.211:8889",
+        description: "AWS Production server"
+      },
+      {
+        url: "http://localhost:8889", 
+        description: "Local development server"
+      }
+    ],
+    // HTTP 요청 지원
+    supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+    // 요청 인터셉터 (HTTP용으로 단순화)
+    requestInterceptor: (req: any) => {
+      // CORS 헤더 추가
+      req.headers['Access-Control-Allow-Origin'] = '*';
+      req.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH';
+      req.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin';
+      return req;
+    },
+    // 응답 인터셉터
+    responseInterceptor: (res: any) => {
+      // CORS 응답 헤더 추가
+      if (res.headers) {
+        res.headers['Access-Control-Allow-Origin'] = '*';
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH';
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin';
+      }
+      return res;
+    }
+  }
 }));
 
 // 에러 핸들링 미들웨어

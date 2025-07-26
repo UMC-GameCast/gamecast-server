@@ -12,32 +12,172 @@ const roomController = new RoomController();
  * /api/rooms:
  *   post:
  *     summary: 방 생성
+ *     description: 새로운 게임 방을 생성합니다. 방장이 되어 다른 사용자들을 초대할 수 있습니다.
  *     tags: [Rooms]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/CreateRoomRequest'
+ *             type: object
+ *             required:
+ *               - roomName
+ *               - hostNickname
+ *             properties:
+ *               roomName:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 100
+ *                 description: 방 이름
+ *                 example: "즐거운 게임 방"
+ *               hostNickname:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 50
+ *                 description: 방장 닉네임
+ *                 example: "게임마스터"
+ *               maxCapacity:
+ *                 type: integer
+ *                 minimum: 2
+ *                 maximum: 5
+ *                 default: 5
+ *                 description: 최대 참여 인원
+ *                 example: 4
+ *               roomSettings:
+ *                 type: object
+ *                 description: 방 설정 (선택사항)
+ *                 properties:
+ *                   gameMode:
+ *                     type: string
+ *                     example: "competitive"
+ *                   difficulty:
+ *                     type: string
+ *                     example: "normal"
  *     responses:
  *       201:
  *         description: 방 생성 성공
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     roomId:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     roomCode:
+ *                       type: string
+ *                       example: "ABC123"
+ *                     roomName:
+ *                       type: string
+ *                       example: "즐거운 게임 방"
+ *                     maxCapacity:
+ *                       type: integer
+ *                       example: 4
+ *                     currentCapacity:
+ *                       type: integer
+ *                       example: 1
+ *                     roomState:
+ *                       type: string
+ *                       example: "waiting"
+ *                     hostGuestId:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440001"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-07-26T10:30:00.000Z"
+ *                     expiresAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-07-26T22:30:00.000Z"
+ *             example:
+ *               resultType: "SUCCESS"
+ *               error: null
+ *               success:
+ *                 roomId: "550e8400-e29b-41d4-a716-446655440000"
+ *                 roomCode: "ABC123"
+ *                 roomName: "즐거운 게임 방"
+ *                 maxCapacity: 4
+ *                 currentCapacity: 1
+ *                 roomState: "waiting"
+ *                 hostGuestId: "550e8400-e29b-41d4-a716-446655440001"
+ *                 createdAt: "2025-07-26T10:30:00.000Z"
+ *                 expiresAt: "2025-07-26T22:30:00.000Z"
  *       400:
  *         description: 잘못된 요청
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/FailResponse'
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "방 이름은 필수입니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ *             example:
+ *               resultType: "FAIL"
+ *               error:
+ *                 errorCode: "BAD_REQUEST"
+ *                 reason: "방 이름은 필수입니다."
+ *                 data: null
+ *               success: null
  *       429:
  *         description: 너무 많은 요청
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/FailResponse'
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "RATE_LIMIT_EXCEEDED"
+ *                     reason:
+ *                       type: string
+ *                       example: "방 생성 요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ *             example:
+ *               resultType: "FAIL"
+ *               error:
+ *                 errorCode: "RATE_LIMIT_EXCEEDED"
+ *                 reason: "방 생성 요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
+ *                 data: null
+ *               success: null
  */
 router.post(
   '/',
@@ -66,18 +206,99 @@ router.post(
  *         content:
  *           application/json:
  *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/SuccessResponse'
- *                 - type: object
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
  *                   properties:
- *                     success:
- *                       $ref: '#/components/schemas/RoomWithParticipants'
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     roomCode:
+ *                       type: string
+ *                       example: "ABC123"
+ *                     roomName:
+ *                       type: string
+ *                       example: "즐거운 게임 방"
+ *                     maxCapacity:
+ *                       type: integer
+ *                       example: 4
+ *                     currentCapacity:
+ *                       type: integer
+ *                       example: 2
+ *                     roomState:
+ *                       type: string
+ *                       example: "waiting"
+ *                     hostGuestId:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440001"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-07-26T10:30:00.000Z"
+ *                     expiresAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-07-26T22:30:00.000Z"
+ *                     hostGuest:
+ *                       type: object
+ *                       properties:
+ *                         nickname:
+ *                           type: string
+ *                           example: "게임마스터"
+ *                     participants:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "550e8400-e29b-41d4-a716-446655440002"
+ *                           nickname:
+ *                             type: string
+ *                             example: "플레이어1"
+ *                           role:
+ *                             type: string
+ *                             enum: [host, guest]
+ *                             example: "guest"
+ *                           joinedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-07-26T10:35:00.000Z"
  *       404:
  *         description: 방을 찾을 수 없음
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/FailResponse'
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.get(
   '/:roomCode',
@@ -97,17 +318,13 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - room_code
- *               - session_id
+ *               - roomCode
  *               - nickname
  *             properties:
- *               room_code:
+ *               roomCode:
  *                 type: string
  *                 pattern: '^[A-Z0-9]{6}$'
  *                 example: "ABC123"
- *               session_id:
- *                 type: string
- *                 example: "session_987654321"
  *               nickname:
  *                 type: string
  *                 maxLength: 50
@@ -115,12 +332,118 @@ router.get(
  *     responses:
  *       200:
  *         description: 방 참여 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     guestUserId:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440002"
+ *                     roomInfo:
+ *                       type: object
+ *                       properties:
+ *                         roomId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "550e8400-e29b-41d4-a716-446655440000"
+ *                         roomCode:
+ *                           type: string
+ *                           example: "ABC123"
+ *                         roomName:
+ *                           type: string
+ *                           example: "즐거운 게임 방"
+ *                         currentCapacity:
+ *                           type: integer
+ *                           example: 2
+ *                         maxCapacity:
+ *                           type: integer
+ *                           example: 4
  *       400:
  *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "방 코드가 올바르지 않습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       404:
  *         description: 방을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       409:
  *         description: 방 참여 불가 (인원 초과, 닉네임 중복 등)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "CONFLICT"
+ *                     reason:
+ *                       type: string
+ *                       example: "방이 가득 찼거나 동일한 닉네임이 존재합니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.post(
   '/join',
@@ -141,19 +464,82 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - guest_user_id
+ *               - guestUserId
  *             properties:
- *               guest_user_id:
+ *               guestUserId:
  *                 type: string
  *                 format: uuid
- *                 example: "uuid-guest-id"
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
  *     responses:
  *       200:
  *         description: 방 나가기 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "방에서 성공적으로 나갔습니다."
  *       400:
  *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "게스트 사용자 ID가 필요합니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       404:
  *         description: 참여 중인 방을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "참여 중인 방을 찾을 수 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.post(
   '/leave',
@@ -173,24 +559,97 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - guest_user_id
+ *               - guestUserId
  *             properties:
- *               guest_user_id:
+ *               guestUserId:
  *                 type: string
  *                 format: uuid
- *               character_setup:
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
+ *               characterSetup:
  *                 type: boolean
  *                 example: true
- *               screen_setup:
+ *               screenSetup:
  *                 type: boolean
  *                 example: false
  *     responses:
  *       200:
  *         description: 준비 상태 업데이트 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "준비 상태가 업데이트되었습니다."
+ *                     preparationStatus:
+ *                       type: object
+ *                       properties:
+ *                         characterSetup:
+ *                           type: boolean
+ *                           example: true
+ *                         screenSetup:
+ *                           type: boolean
+ *                           example: false
  *       400:
  *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "게스트 사용자 ID가 필요합니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       404:
  *         description: 참여 중인 방을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "참여 중인 방을 찾을 수 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.put(
   '/preparation',
@@ -253,6 +712,69 @@ router.delete(
  *     responses:
  *       200:
  *         description: 방 목록 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "550e8400-e29b-41d4-a716-446655440000"
+ *                           roomCode:
+ *                             type: string
+ *                             example: "ABC123"
+ *                           roomName:
+ *                             type: string
+ *                             example: "즐거운 게임 방"
+ *                           maxCapacity:
+ *                             type: integer
+ *                             example: 4
+ *                           currentCapacity:
+ *                             type: integer
+ *                             example: 2
+ *                           roomState:
+ *                             type: string
+ *                             example: "waiting"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-07-26T10:30:00.000Z"
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         size:
+ *                           type: integer
+ *                           example: 20
+ *                         totalElements:
+ *                           type: integer
+ *                           example: 45
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 3
+ *                         hasNext:
+ *                           type: boolean
+ *                           example: true
+ *                         hasPrevious:
+ *                           type: boolean
+ *                           example: false
  */
 router.get(
   '/',
@@ -272,18 +794,83 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - host_guest_id
+ *               - hostGuestId
  *             properties:
- *               host_guest_id:
+ *               hostGuestId:
  *                 type: string
+ *                 format: uuid
  *                 description: 방장 게스트 사용자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
  *     responses:
  *       200:
  *         description: 방 종료 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "방이 성공적으로 종료되었습니다."
  *       400:
  *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "방장 권한이 필요합니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       404:
  *         description: 방을 찾을 수 없음 또는 권한 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없거나 권한이 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.delete(
   '/end',
@@ -304,23 +891,92 @@ router.delete(
  *           schema:
  *             type: object
  *             required:
- *               - host_guest_id
- *               - room_state
+ *               - hostGuestId
+ *               - roomState
  *             properties:
- *               host_guest_id:
+ *               hostGuestId:
  *                 type: string
+ *                 format: uuid
  *                 description: 방장 게스트 사용자 ID
- *               room_state:
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
+ *               roomState:
  *                 type: string
  *                 enum: [waiting, active, recording, expired]
  *                 description: 변경할 방 상태
+ *                 example: "active"
  *     responses:
  *       200:
  *         description: 방 상태 변경 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "방 상태가 변경되었습니다."
+ *                     roomState:
+ *                       type: string
+ *                       example: "active"
  *       400:
  *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "유효하지 않은 방 상태입니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  *       404:
  *         description: 방을 찾을 수 없음 또는 권한 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없거나 권한이 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
  */
 router.put(
   '/state',
@@ -368,5 +1024,275 @@ router.delete(
   '/dev/clear-all',
   roomController.deleteAllRooms.bind(roomController)
 );
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     CreateRoomRequest:
+ *       type: object
+ *       required:
+ *         - roomName
+ *         - hostNickname
+ *       properties:
+ *         roomName:
+ *           type: string
+ *           minLength: 1
+ *           maxLength: 100
+ *           description: 방 이름
+ *           example: "즐거운 게임 방"
+ *         hostNickname:
+ *           type: string
+ *           minLength: 1
+ *           maxLength: 50
+ *           description: 방장 닉네임
+ *           example: "게임마스터"
+ *         maxCapacity:
+ *           type: integer
+ *           minimum: 2
+ *           maximum: 5
+ *           default: 5
+ *           description: 최대 참여 인원
+ *           example: 4
+ *         roomSettings:
+ *           type: object
+ *           description: 방 설정 (선택사항)
+ *           example: 
+ *             gameMode: "competitive"
+ *             difficulty: "normal"
+ *     
+ *     JoinRoomRequest:
+ *       type: object
+ *       required:
+ *         - roomCode
+ *         - nickname
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           pattern: '^[A-Z0-9]{6}$'
+ *           description: 6자리 방 입장 코드
+ *           example: "ABC123"
+ *         nickname:
+ *           type: string
+ *           minLength: 1
+ *           maxLength: 50
+ *           description: 참여자 닉네임
+ *           example: "플레이어1"
+ *     
+ *     Room:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           description: 방 고유 ID
+ *           example: "550e8400-e29b-41d4-a716-446655440000"
+ *         roomCode:
+ *           type: string
+ *           description: 6자리 방 입장 코드
+ *           example: "ABC123"
+ *         roomName:
+ *           type: string
+ *           description: 방 이름
+ *           example: "즐거운 게임 방"
+ *         maxCapacity:
+ *           type: integer
+ *           description: 최대 참여 인원
+ *           example: 4
+ *         currentCapacity:
+ *           type: integer
+ *           description: 현재 참여 인원
+ *           example: 2
+ *         roomState:
+ *           type: string
+ *           enum: [waiting, active, recording, expired]
+ *           description: 방 상태
+ *           example: "waiting"
+ *         hostGuestId:
+ *           type: string
+ *           format: uuid
+ *           description: 방장 게스트 ID
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           description: 방 생성 시간
+ *           example: "2025-07-26T10:30:00.000Z"
+ *         expiresAt:
+ *           type: string
+ *           format: date-time
+ *           description: 방 만료 시간
+ *           example: "2025-07-26T22:30:00.000Z"
+ *         roomSettings:
+ *           type: object
+ *           description: 방 설정
+ *           example:
+ *             gameMode: "competitive"
+ *             difficulty: "normal"
+ *     
+ *     Participant:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           description: 참여자 ID
+ *           example: "550e8400-e29b-41d4-a716-446655440002"
+ *         nickname:
+ *           type: string
+ *           description: 참여자 닉네임
+ *           example: "플레이어1"
+ *         role:
+ *           type: string
+ *           enum: [host, guest]
+ *           description: 참여자 역할
+ *           example: "guest"
+ *         joinedAt:
+ *           type: string
+ *           format: date-time
+ *           description: 참여 시간
+ *           example: "2025-07-26T10:35:00.000Z"
+ *         preparationStatus:
+ *           type: object
+ *           properties:
+ *             screenSetup:
+ *               type: boolean
+ *               description: 화면 설정 완료 여부
+ *               example: true
+ *             characterSetup:
+ *               type: boolean
+ *               description: 캐릭터 설정 완료 여부
+ *               example: false
+ *     
+ *     RoomWithParticipants:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           description: 방 고유 ID
+ *           example: "550e8400-e29b-41d4-a716-446655440000"
+ *         roomCode:
+ *           type: string
+ *           description: 6자리 방 입장 코드
+ *           example: "ABC123"
+ *         roomName:
+ *           type: string
+ *           description: 방 이름
+ *           example: "즐거운 게임 방"
+ *         maxCapacity:
+ *           type: integer
+ *           description: 최대 참여 인원
+ *           example: 4
+ *         currentCapacity:
+ *           type: integer
+ *           description: 현재 참여 인원
+ *           example: 2
+ *         roomState:
+ *           type: string
+ *           enum: [waiting, active, recording, expired]
+ *           description: 방 상태
+ *           example: "waiting"
+ *         hostGuestId:
+ *           type: string
+ *           format: uuid
+ *           description: 방장 게스트 ID
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           description: 방 생성 시간
+ *           example: "2025-07-26T10:30:00.000Z"
+ *         expiresAt:
+ *           type: string
+ *           format: date-time
+ *           description: 방 만료 시간
+ *           example: "2025-07-26T22:30:00.000Z"
+ *         roomSettings:
+ *           type: object
+ *           description: 방 설정
+ *           example:
+ *             gameMode: "competitive"
+ *             difficulty: "normal"
+ *         hostGuest:
+ *           type: object
+ *           properties:
+ *             nickname:
+ *               type: string
+ *               description: 방장 닉네임
+ *               example: "게임마스터"
+ *         participants:
+ *           type: array
+ *           description: 방 참여자 목록
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: 참여자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440002"
+ *               nickname:
+ *                 type: string
+ *                 description: 참여자 닉네임
+ *                 example: "플레이어1"
+ *               role:
+ *                 type: string
+ *                 enum: [host, guest]
+ *                 description: 참여자 역할
+ *                 example: "guest"
+ *               joinedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 참여 시간
+ *                 example: "2025-07-26T10:35:00.000Z"
+ *               preparationStatus:
+ *                 type: object
+ *                 properties:
+ *                   screenSetup:
+ *                     type: boolean
+ *                     description: 화면 설정 완료 여부
+ *                     example: true
+ *                   characterSetup:
+ *                     type: boolean
+ *                     description: 캐릭터 설정 완료 여부
+ *                     example: false
+ *     
+ *     PaginatedResponse:
+ *       type: object
+ *       properties:
+ *         data:
+ *           type: array
+ *           description: 페이지 데이터
+ *           items:
+ *             $ref: '#/components/schemas/RoomWithParticipants'
+ *         pagination:
+ *           type: object
+ *           properties:
+ *             page:
+ *               type: integer
+ *               description: 현재 페이지
+ *               example: 1
+ *             size:
+ *               type: integer
+ *               description: 페이지 크기
+ *               example: 20
+ *             totalElements:
+ *               type: integer
+ *               description: 전체 요소 수
+ *               example: 45
+ *             totalPages:
+ *               type: integer
+ *               description: 전체 페이지 수
+ *               example: 3
+ *             hasNext:
+ *               type: boolean
+ *               description: 다음 페이지 존재 여부
+ *               example: true
+ *             hasPrevious:
+ *               type: boolean
+ *               description: 이전 페이지 존재 여부
+ *               example: false
+ */
 
 export default router;

@@ -69,10 +69,12 @@ RUN adduser --system --uid 1001 gamecast
 # Copy all dependencies from builder (includes Prisma client)
 COPY --from=builder --chown=gamecast:nodejs /app/node_modules ./node_modules
 
-# Copy built application
+# Copy built application and source files for Swagger JSDoc
 COPY --from=builder --chown=gamecast:nodejs /app/dist ./dist
+COPY --from=builder --chown=gamecast:nodejs /app/src ./src
 COPY --from=builder --chown=gamecast:nodejs /app/package*.json ./
 COPY --from=builder --chown=gamecast:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=gamecast:nodejs /app/tsconfig.json ./
 
 # Create necessary directories
 RUN mkdir -p /app/logs && chown gamecast:nodejs /app/logs

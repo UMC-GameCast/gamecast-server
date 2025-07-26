@@ -53,12 +53,12 @@ GameCast 실시간 게임 스트리밍 플랫폼의 백엔드 API 문서입니�
   },
   servers: [
     {
-      url: process.env.NODE_ENV === 'production' 
-        ? "https://api.gamecast.com" 
-        : "http://localhost:8889",
-      description: process.env.NODE_ENV === 'production' 
-        ? "Production server" 
-        : "Development server"
+      url: "http://3.37.34.211:8889", 
+      description: "AWS production server"
+    },
+    {
+      url: "http://localhost:8889", 
+      description: "Local development server"
     }
   ],
   components: {

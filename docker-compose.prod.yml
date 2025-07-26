@@ -45,10 +45,7 @@ services:
 
   # GameCast API 서버
   gamecast-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runner
+    image: gamecast-api:latest
     container_name: gamecast-api
     restart: unless-stopped
     ports:
@@ -69,6 +66,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-your_super_secret_session_key_for_production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      SERVER_URL: ${SERVER_URL:-http://3.37.34.211:8889}
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
