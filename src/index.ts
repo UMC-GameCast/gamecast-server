@@ -19,6 +19,7 @@ import { rateLimitMiddleware } from "./middlewares/rateLimit.middleware.js";
 import roomRoutes from "./routes/room.routes.js";
 import { createRoomRoutes } from "./routes/room.routes.js";
 import webrtcRoutes from "./routes/webrtc.routes.js";
+import videoRoutes from "./routes/video.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
@@ -166,6 +167,7 @@ app.get('/session-info', (req, res) => {
 // GameCast API 라우트
 app.use("/api/rooms", createRoomRoutes(webrtcService));
 app.use("/api/webrtc", webrtcRoutes);
+app.use("/api/videos", videoRoutes);
 
 // WebRTC 테스트 페이지
 app.get('/webrtc-test', (req, res) => {
@@ -174,6 +176,7 @@ app.get('/webrtc-test', (req, res) => {
 
 // 정적 파일 서빙 (Socket.IO 클라이언트 등)
 app.use(express.static('public'));
+app.use('/uploads', express.static('uploads')); // 업로드된 파일 서빙
 
 // 헬스체크 엔드포인트
 app.get('/health', (req, res) => {

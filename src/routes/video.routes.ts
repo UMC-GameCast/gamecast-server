@@ -1,0 +1,516 @@
+import { Router } from 'express';
+import multer from 'multer';
+import { VideoController } from '../controllers/video.controller.js';
+import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware.js';
+
+const router = Router();
+const videoController = new VideoController();
+
+// Multer 설정 - 메모리에 파일 저장
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB
+    files: 2 // 비디오 + 오디오 최대 2개 파일
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
+    const allowedAudioTypes = ['audio/mp3', 'audio/wav', 'audio/aac', 'audio/webm'];
+    
+    if (file.fieldname === 'video' && allowedVideoTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else if (file.fieldname === 'audio' && allowedAudioTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`지원하지 않는 파일 형식입니다: ${file.mimetype}`), false);
+    }
+  }
+});
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     VideoMetadata:
+ *       type: object
+ *       required:
+ *         - roomCode
+ *         - userId
+ *         - gameTitle
+ *         - duration
+ *         - resolution
+ *         - fps
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           description: 방 코드
+ *           example: "ABCD12"
+ *         userId:
+ *           type: string
+ *           description: 사용자 ID
+ *           example: "user123"
+ *         gameTitle:
+ *           type: string
+ *           description: 게임 제목
+ *           example: "League of Legends"
+ *         duration:
+ *           type: integer
+ *           description: 영상 길이 (초)
+ *           example: 1800
+ *         resolution:
+ *           type: string
+ *           description: 해상도
+ *           example: "1920x1080"
+ *         fps:
+ *           type: integer
+ *           description: 프레임 레이트
+ *           example: 60
+ *         description:
+ *           type: string
+ *           description: 영상 설명
+ *           example: "Epic gaming moment"
+ *         tags:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: 태그 목록
+ *           example: ["gaming", "highlight", "epic"]
+ *     
+ *     VideoResult:
+ *       type: object
+ *       properties:
+ *         videoId:
+ *           type: string
+ *           description: 영상 ID
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *         videoPath:
+ *           type: string
+ *           description: 비디오 파일 경로
+ *         audioPath:
+ *           type: string
+ *           description: 오디오 파일 경로
+ *         metadata:
+ *           $ref: '#/components/schemas/VideoMetadata'
+ *         uploadedAt:
+ *           type: string
+ *           format: date-time
+ *           description: 업로드 시간
+ *         status:
+ *           type: string
+ *           enum: [processing, completed, failed]
+ *           description: 처리 상태
+ *     
+ *     VideoStatus:
+ *       type: object
+ *       properties:
+ *         videoId:
+ *           type: string
+ *           description: 영상 ID
+ *         status:
+ *           type: string
+ *           enum: [processing, completed, failed]
+ *           description: 처리 상태
+ *         progress:
+ *           type: integer
+ *           description: 진행률 (0-100)
+ *         videoPath:
+ *           type: string
+ *           description: 비디오 파일 경로
+ *         audioPath:
+ *           type: string
+ *           description: 오디오 파일 경로
+ *         error:
+ *           type: string
+ *           description: 오류 메시지
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *     
+ *     VideoListResult:
+ *       type: object
+ *       properties:
+ *         videos:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/VideoResult'
+ *         totalCount:
+ *           type: integer
+ *           description: 전체 영상 수
+ *         currentPage:
+ *           type: integer
+ *           description: 현재 페이지
+ *         totalPages:
+ *           type: integer
+ *           description: 전체 페이지 수
+ *         hasNextPage:
+ *           type: boolean
+ *           description: 다음 페이지 존재 여부
+ *         hasPrevPage:
+ *           type: boolean
+ *           description: 이전 페이지 존재 여부
+ */
+
+/**
+ * @swagger
+ * /api/videos/upload:
+ *   post:
+ *     summary: 게임 녹화 영상 업로드
+ *     description: 게임 녹화 영상 파일과 오디오 파일, 메타데이터를 업로드합니다.
+ *     tags: [Videos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - video
+ *               - roomCode
+ *               - userId
+ *               - gameTitle
+ *               - duration
+ *               - resolution
+ *               - fps
+ *             properties:
+ *               video:
+ *                 type: string
+ *                 format: binary
+ *                 description: 게임 녹화 영상 파일 (MP4, WebM, AVI, MOV)
+ *               audio:
+ *                 type: string
+ *                 format: binary
+ *                 description: 마이크 녹음 오디오 파일 (MP3, WAV, AAC, WebM) - 선택사항
+ *               roomCode:
+ *                 type: string
+ *                 description: 방 코드
+ *                 example: "ABCD12"
+ *               userId:
+ *                 type: string
+ *                 description: 사용자 ID
+ *                 example: "user123"
+ *               gameTitle:
+ *                 type: string
+ *                 description: 게임 제목
+ *                 example: "League of Legends"
+ *               duration:
+ *                 type: integer
+ *                 description: 영상 길이 (초)
+ *                 example: 1800
+ *               resolution:
+ *                 type: string
+ *                 description: 해상도
+ *                 example: "1920x1080"
+ *               fps:
+ *                 type: integer
+ *                 description: 프레임 레이트
+ *                 example: 60
+ *               description:
+ *                 type: string
+ *                 description: 영상 설명
+ *                 example: "Epic gaming moment"
+ *               tags:
+ *                 type: string
+ *                 description: 태그 목록 (JSON 문자열)
+ *                 example: '["gaming", "highlight", "epic"]'
+ *     responses:
+ *       201:
+ *         description: 영상 업로드 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "게임 녹화 영상이 성공적으로 업로드되었습니다."
+ *                     data:
+ *                       $ref: '#/components/schemas/VideoResult'
+ *       400:
+ *         description: 잘못된 요청 (파일 누락, 형식 오류 등)
+ *       413:
+ *         description: 파일 크기 초과
+ *       500:
+ *         description: 서버 오류
+ */
+router.post('/upload', 
+  rateLimitMiddleware.upload,
+  upload.fields([
+    { name: 'video', maxCount: 1 },
+    { name: 'audio', maxCount: 1 }
+  ]),
+  videoController.uploadGameRecording
+);
+
+/**
+ * @swagger
+ * /api/videos/{videoId}/status:
+ *   get:
+ *     summary: 영상 처리 상태 조회
+ *     description: 업로드된 영상의 처리 상태를 조회합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: videoId
+ *         required: true
+ *         description: 영상 ID
+ *         schema:
+ *           type: string
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *     responses:
+ *       200:
+ *         description: 상태 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "영상 상태 조회 성공"
+ *                     data:
+ *                       $ref: '#/components/schemas/VideoStatus'
+ *       404:
+ *         description: 영상을 찾을 수 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/:videoId/status', videoController.getVideoStatus);
+
+/**
+ * @swagger
+ * /api/videos:
+ *   get:
+ *     summary: 영상 목록 조회
+ *     description: 업로드된 영상 목록을 조회합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         description: 사용자 ID로 필터링
+ *         schema:
+ *           type: string
+ *           example: "user123"
+ *       - in: query
+ *         name: roomCode
+ *         description: 방 코드로 필터링
+ *         schema:
+ *           type: string
+ *           example: "ABCD12"
+ *       - in: query
+ *         name: page
+ *         description: 페이지 번호
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *           example: 1
+ *       - in: query
+ *         name: limit
+ *         description: 페이지당 항목 수
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           maximum: 50
+ *           example: 10
+ *     responses:
+ *       200:
+ *         description: 목록 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "영상 목록 조회 성공"
+ *                     data:
+ *                       $ref: '#/components/schemas/VideoListResult'
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/', videoController.getVideos);
+
+/**
+ * @swagger
+ * /api/videos/{videoId}/stream:
+ *   get:
+ *     summary: 영상 스트리밍
+ *     description: 영상을 스트리밍으로 재생합니다. Range 요청을 지원합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: videoId
+ *         required: true
+ *         description: 영상 ID
+ *         schema:
+ *           type: string
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *       - in: header
+ *         name: Range
+ *         description: HTTP Range 헤더 (부분 요청)
+ *         schema:
+ *           type: string
+ *           example: "bytes=0-1023"
+ *     responses:
+ *       200:
+ *         description: 전체 영상 스트리밍
+ *         content:
+ *           video/mp4:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       206:
+ *         description: 부분 영상 스트리밍 (Range 요청)
+ *         headers:
+ *           Content-Range:
+ *             description: 전송되는 바이트 범위
+ *             schema:
+ *               type: string
+ *               example: "bytes 0-1023/2048"
+ *           Accept-Ranges:
+ *             description: 지원하는 범위 단위
+ *             schema:
+ *               type: string
+ *               example: "bytes"
+ *         content:
+ *           video/mp4:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: 영상을 찾을 수 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/:videoId/stream', videoController.streamVideo);
+
+/**
+ * @swagger
+ * /api/videos/{videoId}/download:
+ *   get:
+ *     summary: 영상 다운로드
+ *     description: 영상 파일을 다운로드합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: videoId
+ *         required: true
+ *         description: 영상 ID
+ *         schema:
+ *           type: string
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *       - in: query
+ *         name: userId
+ *         required: true
+ *         description: 사용자 ID (권한 확인용)
+ *         schema:
+ *           type: string
+ *           example: "user123"
+ *     responses:
+ *       200:
+ *         description: 다운로드 성공
+ *         headers:
+ *           Content-Disposition:
+ *             description: 다운로드 파일명
+ *             schema:
+ *               type: string
+ *               example: 'attachment; filename="game_recording.mp4"'
+ *         content:
+ *           video/mp4:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: 영상을 찾을 수 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/:videoId/download', videoController.downloadVideo);
+
+/**
+ * @swagger
+ * /api/videos/{videoId}:
+ *   delete:
+ *     summary: 영상 삭제
+ *     description: 업로드된 영상을 삭제합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: videoId
+ *         required: true
+ *         description: 영상 ID
+ *         schema:
+ *           type: string
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: 사용자 ID (권한 확인용)
+ *                 example: "user123"
+ *     responses:
+ *       200:
+ *         description: 삭제 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "영상이 성공적으로 삭제되었습니다."
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         videoId:
+ *                           type: string
+ *                           example: "123e4567-e89b-12d3-a456-426614174000"
+ *       404:
+ *         description: 영상을 찾을 수 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.delete('/:videoId', videoController.deleteVideo);
+
+export default router;
