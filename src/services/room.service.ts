@@ -3,6 +3,7 @@ const { PrismaClient, RoomState, UserRole } = pkg;
 import type { Room, GuestUser, RoomState as RoomStateType, UserRole as UserRoleType } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError, NotFoundError, ConflictError } from '../errors/errors.js';
+import type { WebRTCService } from './webrtc.service.js';
 
 const prisma = new PrismaClient();
 
@@ -28,6 +29,11 @@ interface RoomWithParticipants extends Room {
 }
 
 export class RoomService {
+  private webrtcService?: WebRTCService;
+
+  constructor(webrtcService?: WebRTCService) {
+    this.webrtcService = webrtcService;
+  }
   
   /**
    * 6자리 영문자+숫자 입장코드 생성
@@ -428,6 +434,46 @@ export class RoomService {
         }
       });
 
+      // 8. 현재 방의 참여자 정보 조회 (실시간 업데이트용)
+      const updatedParticipants = await tx.roomParticipant.findMany({
+        where: {
+          roomId: room.id,
+          isActive: true
+        },
+        include: {
+          guestUser: true
+        },
+        orderBy: {
+          joinedAt: 'asc'
+        }
+      });
+
+      const participantInfo = updatedParticipants.map(p => ({
+        id: p.id,
+        guestUserId: p.guestUserId,
+        nickname: p.guestUser.nickname,
+        role: p.role,
+        joinedAt: p.joinedAt,
+        preparationStatus: p.preparationStatus,
+        isHost: room.hostGuestId === p.guestUserId
+      }));
+
+      // 9. Socket.IO를 통해 방의 모든 참여자에게 업데이트 알림
+      if (this.webrtcService) {
+        this.webrtcService.emitParticipantUpdate(room.roomCode, {
+          eventType: 'user-joined',
+          participants: participantInfo,
+          newParticipant: {
+            guestUserId: guestUser.id,
+            nickname: guestUser.nickname,
+            role: UserRole.participant,
+            joinedAt: participant.joinedAt
+          },
+          currentCapacity: room.participants.length + 1,
+          maxCapacity: room.maxCapacity
+        });
+      }
+
       return {
         guestUserId: guestUser.id,
         participantId: participant.id,
@@ -662,6 +708,45 @@ export class RoomService {
           currentCapacity: activeParticipants
         }
       });
+
+      // 4. 현재 방의 남은 참여자 정보 조회 (실시간 업데이트용)
+      const remainingParticipants = await tx.roomParticipant.findMany({
+        where: {
+          roomId: participant.room.id,
+          isActive: true
+        },
+        include: {
+          guestUser: true
+        },
+        orderBy: {
+          joinedAt: 'asc'
+        }
+      });
+
+      const participantInfo = remainingParticipants.map(p => ({
+        id: p.id,
+        guestUserId: p.guestUserId,
+        nickname: p.guestUser.nickname,
+        role: p.role,
+        joinedAt: p.joinedAt,
+        preparationStatus: p.preparationStatus,
+        isHost: participant.room.hostGuestId === p.guestUserId
+      }));
+
+      // 5. Socket.IO를 통해 방의 모든 참여자에게 업데이트 알림
+      if (this.webrtcService) {
+        this.webrtcService.emitParticipantUpdate(participant.room.roomCode, {
+          eventType: 'user-left',
+          participants: participantInfo,
+          leftParticipant: {
+            guestUserId: participant.guestUserId,
+            nickname: participant.guestUser.nickname,
+            role: participant.role
+          },
+          currentCapacity: activeParticipants,
+          maxCapacity: participant.room.maxCapacity
+        });
+      }
 
       return {
         roomCode: participant.room.roomCode,

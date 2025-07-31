@@ -3,6 +3,72 @@ import { RoomController } from '../controllers/room.controller.js';
 import { validateRequest } from '../middlewares/validation.middleware.js';
 import { createRoomSchema, joinRoomSchema, updatePreparationSchema } from '../validators/room.validator.js';
 import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware.js';
+import { WebRTCService } from '../services/webrtc.service.js';
+
+export function createRoomRoutes(webrtcService: WebRTCService) {
+  const router = express.Router();
+  const roomController = new RoomController(webrtcService);
+  
+  // 방 생성
+  router.post(
+    '/',
+    rateLimitMiddleware.roomCreation, // 방 생성 특별 제한
+    validateRequest(createRoomSchema),
+    roomController.createRoom.bind(roomController)
+  );
+  
+  // 방 조회
+  router.get(
+    '/:roomCode',
+    roomController.getRoomInfo.bind(roomController)
+  );
+
+  // 방 목록 조회
+  router.get(
+    '/',
+    roomController.getAllRooms.bind(roomController)
+  );
+
+  // 방 참여
+  router.post(
+    '/join',
+    validateRequest(joinRoomSchema),
+    roomController.joinRoom.bind(roomController)
+  );
+
+  // 방 나가기
+  router.post(
+    '/leave',
+    roomController.leaveRoom.bind(roomController)
+  );
+
+  // 방 종료
+  router.delete(
+    '/end',
+    roomController.endRoom.bind(roomController)
+  );
+
+  // 방 상태 변경
+  router.patch(
+    '/state',
+    roomController.updateRoomState.bind(roomController)
+  );
+
+  // 준비 상태 업데이트
+  router.patch(
+    '/preparation',
+    validateRequest(updatePreparationSchema),
+    roomController.updatePreparation.bind(roomController)
+  );
+
+  // 개발용: 모든 방 삭제
+  router.delete(
+    '/dev/all',
+    roomController.deleteAllRooms.bind(roomController)
+  );
+  
+  return router;
+}
 
 const router = express.Router();
 const roomController = new RoomController();
