@@ -3,12 +3,13 @@ import { RoomService } from '../services/room.service.js';
 import { BadRequestError } from '../errors/errors.js';
 import { createSuccessResponse } from '../utils/response.util.js';
 import logger from '../logger.js';
+import { WebRTCService } from '../services/webrtc.service.js';
 
 export class RoomController {
   private roomService: RoomService;
 
-  constructor() {
-    this.roomService = new RoomService();
+  constructor(webrtcService?: WebRTCService) {
+    this.roomService = new RoomService(webrtcService);
   }
 
   /**

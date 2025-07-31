@@ -584,6 +584,61 @@ export class WebRTCService {
     }
   }
 
+  /**
+   * 방 참여자 변경 이벤트를 모든 참여자에게 전달
+   */
+  public emitParticipantUpdate(roomCode: string, updateData: {
+    eventType: 'user-joined' | 'user-left';
+    participants: Array<{
+      id: string;
+      guestUserId: string;
+      nickname: string;
+      role: string;
+      joinedAt: Date;
+      preparationStatus: any;
+      isHost: boolean;
+    }>;
+    newParticipant?: {
+      guestUserId: string;
+      nickname: string;
+      role: string;
+      joinedAt: Date;
+    };
+    leftParticipant?: {
+      guestUserId: string;
+      nickname: string;
+      role: string;
+    };
+    currentCapacity: number;
+    maxCapacity: number;
+  }) {
+    try {
+      // 해당 방의 모든 Socket.IO 클라이언트에게 이벤트 전송
+      this.io.to(roomCode).emit('participant-update', {
+        roomCode,
+        eventType: updateData.eventType,
+        participants: updateData.participants,
+        newParticipant: updateData.newParticipant,
+        leftParticipant: updateData.leftParticipant,
+        roomInfo: {
+          currentCapacity: updateData.currentCapacity,
+          maxCapacity: updateData.maxCapacity
+        },
+        timestamp: new Date()
+      });
+
+      logger.info(`참여자 업데이트 이벤트 전송: ${roomCode} - ${updateData.eventType}`, {
+        roomCode,
+        eventType: updateData.eventType,
+        participantCount: updateData.participants.length,
+        currentCapacity: updateData.currentCapacity
+      });
+
+    } catch (error) {
+      logger.error('참여자 업데이트 이벤트 전송 오류:', error);
+    }
+  }
+
   public getIO(): SocketIOServer {
     return this.io;
   }

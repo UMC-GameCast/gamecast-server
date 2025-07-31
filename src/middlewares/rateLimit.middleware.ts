@@ -34,7 +34,25 @@ const roomCreationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// 영상 업로드 API 특별 제한
+const uploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10분
+  max: 5, // 10분당 최대 5개 영상 업로드
+  message: {
+    resultType: 'FAIL',
+    error: {
+      errorCode: 'UPLOAD_LIMIT_EXCEEDED',
+      reason: '영상 업로드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+      data: null
+    },
+    success: null
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const rateLimitMiddleware = {
   general: generalLimiter,
-  roomCreation: roomCreationLimiter
+  roomCreation: roomCreationLimiter,
+  upload: uploadLimiter
 };
