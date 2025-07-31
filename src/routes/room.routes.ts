@@ -376,6 +376,13 @@ router.get(
  * /api/rooms/join:
  *   post:
  *     summary: 방 참여
+ *     description: |
+ *       지정된 방에 참여합니다. 
+ *       
+ *       **실시간 알림**: 참여 성공 시 해당 방의 모든 참여자에게 Socket.IO `participant-update` 이벤트가 전송됩니다.
+ *       - 이벤트 타입: `user-joined`
+ *       - 전송 대상: 해당 방의 모든 Socket.IO 클라이언트
+ *       - 이벤트 데이터: 업데이트된 참여자 목록, 새 참여자 정보, 방 정보
  *     tags: [Rooms]
  *     requestBody:
  *       required: true
@@ -510,6 +517,35 @@ router.get(
  *                 success:
  *                   type: null
  *                   example: null
+ *     callbacks:
+ *       participantUpdate:
+ *         'participant-update':
+ *           post:
+ *             summary: Socket.IO 실시간 참여자 업데이트 이벤트
+ *             description: 방 참여 성공 시 해당 방의 모든 클라이언트에게 전송되는 실시간 이벤트
+ *             requestBody:
+ *               content:
+ *                 application/json:
+ *                   schema:
+ *                     $ref: '#/components/schemas/ParticipantUpdateEvent'
+ *                   examples:
+ *                     user-joined:
+ *                       summary: 사용자 참여 이벤트
+ *                       value:
+ *                         roomCode: "ABC123"
+ *                         eventType: "user-joined"
+ *                         newParticipant:
+ *                           guestUserId: "550e8400-e29b-41d4-a716-446655440004"
+ *                           nickname: "새로운플레이어"
+ *                           role: "participant"
+ *                           joinedAt: "2025-07-31T01:30:00.000Z"
+ *                         roomInfo:
+ *                           currentCapacity: 2
+ *                           maxCapacity: 4
+ *                         timestamp: "2025-07-31T01:30:00.000Z"
+ *             responses:
+ *               '200':
+ *                 description: 실시간 이벤트 수신 성공
  */
 router.post(
   '/join',
@@ -522,6 +558,13 @@ router.post(
  * /api/rooms/leave:
  *   post:
  *     summary: 방 나가기
+ *     description: |
+ *       현재 참여 중인 방에서 나갑니다.
+ *       
+ *       **실시간 알림**: 방 나가기 성공 시 해당 방의 남은 참여자들에게 Socket.IO `participant-update` 이벤트가 전송됩니다.
+ *       - 이벤트 타입: `user-left`
+ *       - 전송 대상: 해당 방의 모든 Socket.IO 클라이언트
+ *       - 이벤트 데이터: 업데이트된 참여자 목록, 떠난 참여자 정보, 방 정보
  *     tags: [Rooms]
  *     requestBody:
  *       required: true
@@ -606,6 +649,34 @@ router.post(
  *                 success:
  *                   type: null
  *                   example: null
+ *     callbacks:
+ *       participantUpdate:
+ *         'participant-update':
+ *           post:
+ *             summary: Socket.IO 실시간 참여자 업데이트 이벤트
+ *             description: 방 나가기 성공 시 해당 방의 남은 참여자들에게 전송되는 실시간 이벤트
+ *             requestBody:
+ *               content:
+ *                 application/json:
+ *                   schema:
+ *                     $ref: '#/components/schemas/ParticipantUpdateEvent'
+ *                   examples:
+ *                     user-left:
+ *                       summary: 사용자 퇴장 이벤트
+ *                       value:
+ *                         roomCode: "ABC123"
+ *                         eventType: "user-left"
+ *                         leftParticipant:
+ *                           guestUserId: "550e8400-e29b-41d4-a716-446655440004"
+ *                           nickname: "떠난플레이어"
+ *                           role: "participant"
+ *                         roomInfo:
+ *                           currentCapacity: 1
+ *                           maxCapacity: 4
+ *                         timestamp: "2025-07-31T01:30:05.000Z"
+ *             responses:
+ *               '200':
+ *                 description: 실시간 이벤트 수신 성공
  */
 router.post(
   '/leave',
@@ -1359,6 +1430,148 @@ router.delete(
  *               type: boolean
  *               description: 이전 페이지 존재 여부
  *               example: false
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     ParticipantUpdateEvent:
+ *       type: object
+ *       description: |
+ *         Socket.IO 실시간 참여자 업데이트 이벤트
+ *         
+ *         **이벤트명**: `participant-update`
+ *         
+ *         **발생 시점**:
+ *         - 사용자가 방에 참여할 때 (eventType: user-joined)
+ *         - 사용자가 방에서 나갈 때 (eventType: user-left)
+ *         
+ *         **수신 방법**:
+ *         ```javascript
+ *         socket.on('participant-update', (data) => {
+ *           console.log('참여자 업데이트:', data);
+ *           if (data.eventType === 'user-joined') {
+ *             console.log('새 참여자:', data.newParticipant.nickname);
+ *           } else if (data.eventType === 'user-left') {
+ *             console.log('떠난 참여자:', data.leftParticipant.nickname);
+ *           }
+ *         });
+ *         ```
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           description: 방 코드
+ *           example: "ABC123"
+ *         eventType:
+ *           type: string
+ *           enum: [user-joined, user-left]
+ *           description: 이벤트 타입
+ *           example: "user-joined"
+ *         participants:
+ *           type: array
+ *           description: 현재 방의 모든 참여자 목록
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: 참여자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440002"
+ *               guestUserId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: 게스트 사용자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440003"
+ *               nickname:
+ *                 type: string
+ *                 description: 참여자 닉네임
+ *                 example: "플레이어1"
+ *               role:
+ *                 type: string
+ *                 enum: [host, participant]
+ *                 description: 참여자 역할
+ *                 example: "participant"
+ *               joinedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 참여 시간
+ *                 example: "2025-07-31T01:30:00.000Z"
+ *               preparationStatus:
+ *                 type: object
+ *                 description: 준비 상태
+ *                 properties:
+ *                   characterSetup:
+ *                     type: boolean
+ *                     description: 캐릭터 설정 완료 여부
+ *                     example: false
+ *                   screenSetup:
+ *                     type: boolean
+ *                     description: 화면 설정 완료 여부
+ *                     example: false
+ *               isHost:
+ *                 type: boolean
+ *                 description: 방장 여부
+ *                 example: false
+ *         newParticipant:
+ *           type: object
+ *           description: 새로 참여한 사용자 정보 (user-joined인 경우)
+ *           properties:
+ *             guestUserId:
+ *               type: string
+ *               format: uuid
+ *               description: 게스트 사용자 ID
+ *               example: "550e8400-e29b-41d4-a716-446655440003"
+ *             nickname:
+ *               type: string
+ *               description: 닉네임
+ *               example: "새로운플레이어"
+ *             role:
+ *               type: string
+ *               enum: [participant]
+ *               description: 역할
+ *               example: "participant"
+ *             joinedAt:
+ *               type: string
+ *               format: date-time
+ *               description: 참여 시간
+ *               example: "2025-07-31T01:30:00.000Z"
+ *         leftParticipant:
+ *           type: object
+ *           description: 떠난 사용자 정보 (user-left인 경우)
+ *           properties:
+ *             guestUserId:
+ *               type: string
+ *               format: uuid
+ *               description: 게스트 사용자 ID
+ *               example: "550e8400-e29b-41d4-a716-446655440003"
+ *             nickname:
+ *               type: string
+ *               description: 닉네임
+ *               example: "떠난플레이어"
+ *             role:
+ *               type: string
+ *               enum: [participant]
+ *               description: 역할
+ *               example: "participant"
+ *         roomInfo:
+ *           type: object
+ *           description: 방 정보
+ *           properties:
+ *             currentCapacity:
+ *               type: integer
+ *               description: 현재 인원
+ *               example: 3
+ *             maxCapacity:
+ *               type: integer
+ *               description: 최대 인원
+ *               example: 4
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           description: 이벤트 발생 시간
+ *           example: "2025-07-31T01:30:00.000Z"
  */
 
 export default router;

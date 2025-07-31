@@ -17,6 +17,7 @@ import { rateLimitMiddleware } from "./middlewares/rateLimit.middleware.js";
 
 // GameCast 관련 import
 import roomRoutes from "./routes/room.routes.js";
+import { createRoomRoutes } from "./routes/room.routes.js";
 import webrtcRoutes from "./routes/webrtc.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
@@ -163,7 +164,7 @@ app.get('/session-info', (req, res) => {
 });
 
 // GameCast API 라우트
-app.use("/api/rooms", roomRoutes);
+app.use("/api/rooms", createRoomRoutes(webrtcService));
 app.use("/api/webrtc", webrtcRoutes);
 
 // WebRTC 테스트 페이지
