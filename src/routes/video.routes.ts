@@ -513,4 +513,272 @@ router.get('/:videoId/download', videoController.downloadVideo);
  */
 router.delete('/:videoId', videoController.deleteVideo);
 
+/**
+ * @swagger
+ * /api/videos/highlight/extract/{roomCode}:
+ *   post:
+ *     summary: 하이라이트 추출 시작
+ *     description: 방의 모든 영상을 하이라이트 추출 서버로 전송하여 하이라이트 영상 생성을 시작합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: roomCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 방 코드
+ *         example: "ABCD12"
+ *     responses:
+ *       200:
+ *         description: 하이라이트 추출 시작 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     jobId:
+ *                       type: string
+ *                       description: 하이라이트 추출 작업 ID
+ *                       example: "job_123456789"
+ *                     status:
+ *                       type: string
+ *                       description: 작업 상태
+ *                       example: "accepted"
+ *                     message:
+ *                       type: string
+ *                       example: "하이라이트 추출이 시작되었습니다."
+ *       400:
+ *         description: 잘못된 요청
+ *       500:
+ *         description: 서버 오류
+ */
+router.post('/highlight/extract/:roomCode', videoController.startHighlightExtraction);
+
+/**
+ * @swagger
+ * /api/videos/highlight/status/{jobId}:
+ *   get:
+ *     summary: 하이라이트 추출 상태 조회
+ *     description: 진행 중인 하이라이트 추출 작업의 상태를 조회합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 하이라이트 추출 작업 ID
+ *         example: "job_123456789"
+ *     responses:
+ *       200:
+ *         description: 상태 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     jobId:
+ *                       type: string
+ *                       example: "job_123456789"
+ *                     status:
+ *                       type: string
+ *                       enum: [accepted, processing, completed, failed]
+ *                       example: "processing"
+ *                     progress:
+ *                       type: number
+ *                       description: 진행률 (0-100)
+ *                       example: 45
+ *       400:
+ *         description: 잘못된 요청
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/highlight/status/:jobId', videoController.getHighlightExtractionStatus);
+
+/**
+ * @swagger
+ * /api/videos/highlight/list/{roomCode}:
+ *   get:
+ *     summary: 완성된 하이라이트 영상 목록 조회
+ *     description: 특정 방의 완성된 하이라이트 영상 목록을 조회합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: roomCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 방 코드
+ *         example: "ABCD12"
+ *     responses:
+ *       200:
+ *         description: 목록 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     roomCode:
+ *                       type: string
+ *                       example: "ABCD12"
+ *                     highlights:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           highlightId:
+ *                             type: string
+ *                             example: "highlight_123456789"
+ *                           title:
+ *                             type: string
+ *                             example: "Epic Victory Highlight"
+ *                           duration:
+ *                             type: number
+ *                             description: 영상 길이 (초)
+ *                             example: 120
+ *                           downloadUrl:
+ *                             type: string
+ *                             description: S3 다운로드 URL
+ *                             example: "https://s3.amazonaws.com/bucket/highlight.mp4"
+ *                           thumbnailS3Key:
+ *                             type: string
+ *                             description: 썸네일 S3 키
+ *                             example: "highlights/ABCD12/thumbnail_123.jpg"
+ *                           processedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2023-11-15T10:30:00.000Z"
+ *                     totalCount:
+ *                       type: number
+ *                       example: 3
+ *       400:
+ *         description: 잘못된 요청
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/highlight/list/:roomCode', videoController.getHighlightVideos);
+
+/**
+ * @swagger
+ * /api/videos/highlight-callback/{roomCode}:
+ *   post:
+ *     summary: 하이라이트 추출 완료 콜백
+ *     description: 하이라이트 추출 서버에서 작업 완료 시 호출하는 콜백 엔드포인트입니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: roomCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 방 코드
+ *         example: "ABCD12"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - jobId
+ *               - roomCode
+ *               - status
+ *               - processedAt
+ *             properties:
+ *               jobId:
+ *                 type: string
+ *                 description: 하이라이트 추출 작업 ID
+ *                 example: "job_123456789"
+ *               roomCode:
+ *                 type: string
+ *                 description: 방 코드
+ *                 example: "ABCD12"
+ *               status:
+ *                 type: string
+ *                 enum: [completed, failed]
+ *                 description: 작업 완료 상태
+ *                 example: "completed"
+ *               highlightVideos:
+ *                 type: array
+ *                 description: 생성된 하이라이트 영상 목록
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     s3Key:
+ *                       type: string
+ *                       example: "highlights/ABCD12/highlight_01.mp4"
+ *                     title:
+ *                       type: string
+ *                       example: "Epic Victory Moment"
+ *                     duration:
+ *                       type: number
+ *                       example: 120
+ *                     thumbnailS3Key:
+ *                       type: string
+ *                       example: "highlights/ABCD12/thumbnail_01.jpg"
+ *               error:
+ *                 type: string
+ *                 description: 실패 시 에러 메시지
+ *                 example: "Processing failed: insufficient video quality"
+ *               processedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 처리 완료 시간
+ *                 example: "2023-11-15T10:30:00.000Z"
+ *     responses:
+ *       200:
+ *         description: 콜백 처리 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "콜백 처리가 완료되었습니다."
+ *                     jobId:
+ *                       type: string
+ *                       example: "job_123456789"
+ *                     roomCode:
+ *                       type: string
+ *                       example: "ABCD12"
+ *       400:
+ *         description: 잘못된 요청
+ *       500:
+ *         description: 서버 오류
+ */
+router.post('/highlight-callback/:roomCode', videoController.handleHighlightCallback);
+
 export default router;

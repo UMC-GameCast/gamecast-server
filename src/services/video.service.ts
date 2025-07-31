@@ -4,6 +4,8 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../db.config.js';
 import logger from '../logger.js';
+import { S3Service } from './s3.service.js';
+import { HighlightExtractionService, VideoProcessingRequest } from './highlight-extraction.service.js';
 
 export interface GameRecordingData {
   videoFile: MulterFile;
@@ -94,9 +96,13 @@ export class VideoService {
   private readonly maxFileSize = 500 * 1024 * 1024; // 500MB
   private readonly allowedVideoTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
   private readonly allowedAudioTypes = ['audio/mp3', 'audio/wav', 'audio/aac', 'audio/webm'];
+  private readonly s3Service: S3Service;
+  private readonly highlightService: HighlightExtractionService;
 
   constructor() {
     this.uploadDir = path.join(process.cwd(), 'uploads');
+    this.s3Service = new S3Service();
+    this.highlightService = new HighlightExtractionService();
     this.ensureUploadDirectory();
   }
 
@@ -152,14 +158,63 @@ export class VideoService {
   }
 
   /**
-   * 게임 녹화 영상 처리
+   * 게임 녹화 영상 처리 (S3 업로드 및 하이라이트 추출 포함)
    */
   public async processGameRecording(data: GameRecordingData): Promise<VideoResult> {
     const videoId = uuidv4();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
     try {
-      // 파일 저장 경로 생성
+      logger.info('게임 녹화 영상 처리 시작', {
+        videoId,
+        roomCode: data.metadata.roomCode,
+        userId: data.metadata.userId,
+        videoSize: data.videoFile.size,
+        audioSize: data.audioFile?.size || 0
+      });
+
+      // 1. S3에 원본 영상 업로드
+      const videoS3Key = this.s3Service.generateS3Key(
+        data.metadata.roomCode,
+        data.metadata.userId,
+        'original'
+      ) + '_video' + path.extname(data.videoFile.originalname);
+
+      const videoUploadResult = await this.s3Service.uploadBuffer(
+        data.videoFile.buffer,
+        videoS3Key,
+        data.videoFile.mimetype
+      );
+
+      logger.info('비디오 파일 S3 업로드 완료', {
+        videoId,
+        s3Key: videoS3Key,
+        etag: videoUploadResult.etag
+      });
+
+      // 2. S3에 오디오 파일 업로드 (선택사항)
+      let audioS3Key: string | undefined;
+      if (data.audioFile) {
+        audioS3Key = this.s3Service.generateS3Key(
+          data.metadata.roomCode,
+          data.metadata.userId,
+          'original'
+        ) + '_audio' + path.extname(data.audioFile.originalname);
+
+        const audioUploadResult = await this.s3Service.uploadBuffer(
+          data.audioFile.buffer,
+          audioS3Key,
+          data.audioFile.mimetype
+        );
+
+        logger.info('오디오 파일 S3 업로드 완료', {
+          videoId,
+          s3Key: audioS3Key,
+          etag: audioUploadResult.etag
+        });
+      }
+
+      // 3. 로컬에도 임시 저장 (백업 및 즉시 스트리밍용)
       const videoExtension = path.extname(data.videoFile.originalname);
       const audioExtension = data.audioFile ? path.extname(data.audioFile.originalname) : null;
       
@@ -169,16 +224,12 @@ export class VideoService {
       const videoPath = path.join(this.uploadDir, videoFileName);
       const audioPath = audioFileName ? path.join(this.uploadDir, audioFileName) : undefined;
 
-      // 파일 저장
       await fs.writeFile(videoPath, data.videoFile.buffer);
-      logger.info('비디오 파일 저장 완료:', videoPath);
-
       if (data.audioFile && audioPath) {
         await fs.writeFile(audioPath, data.audioFile.buffer);
-        logger.info('오디오 파일 저장 완료:', audioPath);
       }
 
-      // 임시로 session 테이블에 저장 (나중에 적절한 video 테이블로 변경)
+      // 4. 데이터베이스에 영상 정보 저장
       const uploadRecord = await prisma.session.create({
         data: {
           id: videoId,
@@ -189,6 +240,8 @@ export class VideoService {
             gameTitle: data.metadata.gameTitle,
             videoPath: videoPath,
             audioPath: audioPath,
+            videoS3Key: videoS3Key,
+            audioS3Key: audioS3Key,
             duration: data.metadata.duration,
             resolution: data.metadata.resolution,
             fps: data.metadata.fps,
@@ -196,7 +249,8 @@ export class VideoService {
             tags: data.metadata.tags,
             status: 'completed',
             fileSize: data.videoFile.size + (data.audioFile?.size || 0),
-            type: 'game_recording'
+            type: 'game_recording',
+            uploadedAt: new Date().toISOString()
           }),
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30일 후 만료
         }
@@ -211,12 +265,20 @@ export class VideoService {
         status: 'completed'
       };
 
-      logger.info('게임 녹화 업로드 처리 완료:', { videoId });
+      logger.info('게임 녹화 업로드 처리 완료', {
+        videoId,
+        roomCode: data.metadata.roomCode,
+        userId: data.metadata.userId
+      });
       
       return result;
 
     } catch (error) {
-      logger.error('게임 녹화 업로드 처리 실패:', error);
+      logger.error('게임 녹화 업로드 처리 실패', {
+        videoId,
+        roomCode: data.metadata.roomCode,
+        error: error
+      });
       
       // 실패시 업로드된 파일 정리
       try {
@@ -228,7 +290,7 @@ export class VideoService {
           await fs.unlink(audioPath).catch(() => {});
         }
       } catch (cleanupError) {
-        logger.error('파일 정리 실패:', cleanupError);
+        logger.error('파일 정리 실패', cleanupError);
       }
 
       throw new Error('파일 업로드 처리 중 오류가 발생했습니다.');
@@ -483,6 +545,168 @@ export class VideoService {
     } catch (error) {
       logger.error('영상 다운로드 데이터 조회 실패:', error);
       throw new Error('영상 다운로드 데이터 조회 중 오류가 발생했습니다.');
+    }
+  }
+
+  /**
+   * 방의 모든 영상을 하이라이트 추출 서버로 전송
+   */
+  public async startHighlightExtraction(roomCode: string): Promise<{ jobId: string; status: string }> {
+    try {
+      logger.info('하이라이트 추출 프로세스 시작', { roomCode });
+
+      // 해당 방의 모든 영상 조회
+      const videoRecords = await prisma.session.findMany({
+        where: {
+          data: {
+            contains: roomCode
+          }
+        }
+      });
+
+      const roomVideos = videoRecords
+        .map(record => {
+          try {
+            const data = JSON.parse(record.data || '{}');
+            if (data.type === 'game_recording' && data.roomCode === roomCode) {
+              return {
+                sessionId: record.id,
+                ...data
+              };
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      if (roomVideos.length === 0) {
+        throw new Error('해당 방에 업로드된 영상이 없습니다.');
+      }
+
+      // 하이라이트 추출 요청 데이터 구성
+      const extractionRequest: VideoProcessingRequest = {
+        roomCode: roomCode,
+        videos: roomVideos.map(video => ({
+          userId: video.userId,
+          videoS3Key: video.videoS3Key,
+          audioS3Key: video.audioS3Key,
+          metadata: {
+            gameTitle: video.gameTitle,
+            duration: video.duration,
+            resolution: video.resolution,
+            fps: video.fps
+          }
+        })),
+        callbackUrl: this.highlightService.generateCallbackUrl(roomCode)
+      };
+
+      // 하이라이트 추출 서버에 요청
+      const response = await this.highlightService.startHighlightExtraction(extractionRequest);
+
+      logger.info('하이라이트 추출 요청 성공', {
+        roomCode: roomCode,
+        jobId: response.jobId,
+        videoCount: roomVideos.length
+      });
+
+      return {
+        jobId: response.jobId,
+        status: response.status
+      };
+
+    } catch (error) {
+      logger.error('하이라이트 추출 프로세스 시작 실패', {
+        roomCode: roomCode,
+        error: error
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 하이라이트 추출 상태 조회
+   */
+  public async getHighlightExtractionStatus(jobId: string): Promise<{ status: string; progress?: number }> {
+    try {
+      const response = await this.highlightService.getExtractionStatus(jobId);
+
+      return {
+        status: response.status,
+        progress: response.estimatedTimeMinutes ? 100 - response.estimatedTimeMinutes : undefined
+      };
+
+    } catch (error) {
+      logger.error('하이라이트 추출 상태 조회 실패', {
+        jobId: jobId,
+        error: error
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 완성된 하이라이트 영상 목록 조회
+   */
+  public async getHighlightVideos(roomCode: string): Promise<any[]> {
+    try {
+      const highlightRecords = await prisma.session.findMany({
+        where: {
+          data: {
+            contains: `"roomCode":"${roomCode}"`
+          }
+        }
+      });
+
+      const highlights = highlightRecords
+        .map(record => {
+          try {
+            const data = JSON.parse(record.data || '{}');
+            if (data.type === 'highlight_video' && data.roomCode === roomCode) {
+              return {
+                highlightId: record.id,
+                title: data.title,
+                duration: data.duration,
+                s3Key: data.s3Key,
+                thumbnailS3Key: data.thumbnailS3Key,
+                processedAt: data.processedAt,
+                downloadUrl: ''
+              };
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        })
+        .filter((highlight): highlight is NonNullable<typeof highlight> => highlight !== null);
+
+      // S3 다운로드 URL 생성
+      for (const highlight of highlights) {
+        try {
+          const downloadUrl = await this.s3Service.getDownloadUrl(highlight.s3Key);
+          highlight.downloadUrl = downloadUrl.url;
+        } catch (error) {
+          logger.warn('하이라이트 영상 다운로드 URL 생성 실패', {
+            s3Key: highlight.s3Key,
+            error: error
+          });
+        }
+      }
+
+      logger.info('하이라이트 영상 목록 조회 완료', {
+        roomCode: roomCode,
+        highlightCount: highlights.length
+      });
+
+      return highlights;
+
+    } catch (error) {
+      logger.error('하이라이트 영상 목록 조회 실패', {
+        roomCode: roomCode,
+        error: error
+      });
+      throw error;
     }
   }
 }

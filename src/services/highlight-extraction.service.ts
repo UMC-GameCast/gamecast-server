@@ -1,0 +1,242 @@
+import axios from 'axios';
+import logger from '../logger.js';
+
+export interface VideoProcessingRequest {
+  roomCode: string;
+  videos: {
+    userId: string;
+    videoS3Key: string;
+    audioS3Key?: string;
+    metadata: {
+      gameTitle: string;
+      duration: number;
+      resolution: string;
+      fps: number;
+    };
+  }[];
+  callbackUrl: string; // API 서버의 콜백 엔드포인트
+}
+
+export interface VideoProcessingResponse {
+  jobId: string;
+  status: 'accepted' | 'processing' | 'completed' | 'failed';
+  estimatedTimeMinutes?: number;
+  message?: string;
+}
+
+export interface HighlightResult {
+  jobId: string;
+  roomCode: string;
+  status: 'completed' | 'failed';
+  highlightVideos?: {
+    s3Key: string;
+    title: string;
+    duration: number;
+    thumbnailS3Key?: string;
+  }[];
+  error?: string;
+  processedAt: string;
+}
+
+export class HighlightExtractionService {
+  private extractionServerUrl: string;
+  private apiServerBaseUrl: string;
+
+  constructor() {
+    this.extractionServerUrl = process.env.HIGHLIGHT_EXTRACTION_SERVER_URL || 'http://localhost:9000';
+    this.apiServerBaseUrl = process.env.API_SERVER_BASE_URL || 'http://localhost:8889';
+    
+    logger.info('하이라이트 추출 서비스 초기화', {
+      extractionServerUrl: this.extractionServerUrl,
+      apiServerBaseUrl: this.apiServerBaseUrl
+    });
+  }
+
+  /**
+   * 하이라이트 추출 작업 시작
+   */
+  public async startHighlightExtraction(request: VideoProcessingRequest): Promise<VideoProcessingResponse> {
+    try {
+      logger.info('하이라이트 추출 작업 시작 요청', {
+        roomCode: request.roomCode,
+        videoCount: request.videos.length
+      });
+
+      const response = await axios.post(
+        `${this.extractionServerUrl}/api/extract/start`,
+        request,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': process.env.EXTRACTION_API_KEY || ''
+          },
+          timeout: 30000 // 30초 타임아웃
+        }
+      );
+
+      const result: VideoProcessingResponse = response.data;
+
+      logger.info('하이라이트 추출 작업 시작 성공', {
+        roomCode: request.roomCode,
+        jobId: result.jobId,
+        status: result.status
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('하이라이트 추출 작업 시작 실패', {
+        roomCode: request.roomCode,
+        error: error
+      });
+
+      if (axios.isAxiosError(error)) {
+        throw new Error(`하이라이트 추출 서버 통신 실패: ${error.response?.status} ${error.response?.statusText}`);
+      }
+      throw new Error(`하이라이트 추출 작업 시작 실패: ${error}`);
+    }
+  }
+
+  /**
+   * 하이라이트 추출 작업 상태 조회
+   */
+  public async getExtractionStatus(jobId: string): Promise<VideoProcessingResponse> {
+    try {
+      const response = await axios.get(
+        `${this.extractionServerUrl}/api/extract/status/${jobId}`,
+        {
+          headers: {
+            'X-API-Key': process.env.EXTRACTION_API_KEY || ''
+          },
+          timeout: 10000
+        }
+      );
+
+      const result: VideoProcessingResponse = response.data;
+
+      logger.info('하이라이트 추출 상태 조회 성공', {
+        jobId: jobId,
+        status: result.status
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('하이라이트 추출 상태 조회 실패', {
+        jobId: jobId,
+        error: error
+      });
+
+      if (axios.isAxiosError(error)) {
+        throw new Error(`하이라이트 추출 서버 통신 실패: ${error.response?.status} ${error.response?.statusText}`);
+      }
+      throw new Error(`하이라이트 추출 상태 조회 실패: ${error}`);
+    }
+  }
+
+  /**
+   * 콜백 URL 생성
+   */
+  public generateCallbackUrl(roomCode: string): string {
+    return `${this.apiServerBaseUrl}/api/videos/highlight-callback/${roomCode}`;
+  }
+
+  /**
+   * 하이라이트 추출 완료 처리 (콜백에서 사용)
+   */
+  public async processHighlightResult(result: HighlightResult): Promise<void> {
+    try {
+      logger.info('하이라이트 추출 완료 결과 처리 시작', {
+        jobId: result.jobId,
+        roomCode: result.roomCode,
+        status: result.status
+      });
+
+      if (result.status === 'completed' && result.highlightVideos) {
+        // 하이라이트 영상 정보를 데이터베이스에 저장
+        for (const highlight of result.highlightVideos) {
+          await this.saveHighlightVideo({
+            roomCode: result.roomCode,
+            jobId: result.jobId,
+            s3Key: highlight.s3Key,
+            title: highlight.title,
+            duration: highlight.duration,
+            thumbnailS3Key: highlight.thumbnailS3Key,
+            processedAt: result.processedAt
+          });
+        }
+
+        logger.info('하이라이트 영상 저장 완료', {
+          jobId: result.jobId,
+          roomCode: result.roomCode,
+          highlightCount: result.highlightVideos.length
+        });
+      } else {
+        logger.error('하이라이트 추출 실패', {
+          jobId: result.jobId,
+          roomCode: result.roomCode,
+          error: result.error
+        });
+      }
+
+    } catch (error) {
+      logger.error('하이라이트 결과 처리 실패', {
+        jobId: result.jobId,
+        roomCode: result.roomCode,
+        error: error
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 하이라이트 영상 정보를 데이터베이스에 저장
+   */
+  private async saveHighlightVideo(data: {
+    roomCode: string;
+    jobId: string;
+    s3Key: string;
+    title: string;
+    duration: number;
+    thumbnailS3Key?: string;
+    processedAt: string;
+  }): Promise<void> {
+    try {
+      // 임시로 session 테이블에 저장 (나중에 highlight_videos 테이블로 이전)
+      const { prisma } = await import('../db.config.js');
+      
+      await prisma.session.create({
+        data: {
+          id: `highlight_${data.jobId}_${Date.now()}`,
+          sid: `highlight_${data.roomCode}_${data.s3Key}`,
+          data: JSON.stringify({
+            type: 'highlight_video',
+            roomCode: data.roomCode,
+            jobId: data.jobId,
+            s3Key: data.s3Key,
+            title: data.title,
+            duration: data.duration,
+            thumbnailS3Key: data.thumbnailS3Key,
+            processedAt: data.processedAt,
+            status: 'completed'
+          }),
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90일 후 만료
+        }
+      });
+
+      logger.info('하이라이트 영상 데이터베이스 저장 완료', {
+        roomCode: data.roomCode,
+        s3Key: data.s3Key,
+        title: data.title
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 영상 데이터베이스 저장 실패', {
+        roomCode: data.roomCode,
+        s3Key: data.s3Key,
+        error: error
+      });
+      throw error;
+    }
+  }
+}

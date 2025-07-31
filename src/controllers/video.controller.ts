@@ -319,4 +319,192 @@ export class VideoController {
       });
     }
   };
+
+  /**
+   * 하이라이트 추출 시작
+   */
+  public startHighlightExtraction = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { roomCode } = req.params;
+
+      if (!roomCode) {
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'MISSING_ROOM_CODE',
+            reason: '방 코드가 필요합니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      logger.info('하이라이트 추출 시작 요청', { roomCode });
+
+      const result = await this.videoService.startHighlightExtraction(roomCode);
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          jobId: result.jobId,
+          status: result.status,
+          message: '하이라이트 추출이 시작되었습니다.'
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 추출 시작 실패:', error);
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'EXTRACTION_START_FAILED',
+          reason: error instanceof Error ? error.message : '하이라이트 추출 시작 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 하이라이트 추출 상태 조회
+   */
+  public getHighlightExtractionStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { jobId } = req.params;
+
+      if (!jobId) {
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'MISSING_JOB_ID',
+            reason: '작업 ID가 필요합니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      logger.info('하이라이트 추출 상태 조회', { jobId });
+
+      const status = await this.videoService.getHighlightExtractionStatus(jobId);
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          jobId: jobId,
+          status: status.status,
+          progress: status.progress
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 추출 상태 조회 실패:', error);
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'STATUS_CHECK_FAILED',
+          reason: error instanceof Error ? error.message : '상태 조회 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 완성된 하이라이트 영상 목록 조회
+   */
+  public getHighlightVideos = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { roomCode } = req.params;
+
+      if (!roomCode) {
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'MISSING_ROOM_CODE',
+            reason: '방 코드가 필요합니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      logger.info('하이라이트 영상 목록 조회', { roomCode });
+
+      const highlights = await this.videoService.getHighlightVideos(roomCode);
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          roomCode: roomCode,
+          highlights: highlights,
+          totalCount: highlights.length
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 영상 목록 조회 실패:', error);
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'HIGHLIGHT_LIST_FAILED',
+          reason: error instanceof Error ? error.message : '하이라이트 영상 목록 조회 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 하이라이트 추출 완료 콜백 (추출 서버에서 호출)
+   */
+  public handleHighlightCallback = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { roomCode } = req.params;
+      const callbackData = req.body;
+
+      logger.info('하이라이트 추출 완료 콜백 수신', {
+        roomCode: roomCode,
+        jobId: callbackData.jobId,
+        status: callbackData.status
+      });
+
+      // HighlightExtractionService를 통해 콜백 데이터 처리
+      const { HighlightExtractionService } = await import('../services/highlight-extraction.service.js');
+      const highlightService = new HighlightExtractionService();
+      
+      await highlightService.processHighlightResult(callbackData);
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '콜백 처리가 완료되었습니다.',
+          jobId: callbackData.jobId,
+          roomCode: roomCode
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 콜백 처리 실패:', error);
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'CALLBACK_PROCESSING_FAILED',
+          reason: error instanceof Error ? error.message : '콜백 처리 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
 }
