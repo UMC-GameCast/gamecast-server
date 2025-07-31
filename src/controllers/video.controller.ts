@@ -14,11 +14,6 @@ interface MulterFile {
   path?: string;
 }
 
-// Express Request 확장 (multer 사용시)
-interface MulterRequest extends Request {
-  files?: { [fieldname: string]: MulterFile[] } | MulterFile[];
-}
-
 export class VideoController {
   private videoService: VideoService;
 
@@ -95,12 +90,49 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('게임 녹화 영상 업로드 실패:', error);
-      res.status(500).json({
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          roomCode: req.body.roomCode,
+          userId: req.body.userId,
+          gameTitle: req.body.gameTitle,
+          hasVideoFile: !!(req as any).files?.video?.[0],
+          hasAudioFile: !!(req as any).files?.audio?.[0],
+          videoFileSize: (req as any).files?.video?.[0]?.size || 0,
+          audioFileSize: (req as any).files?.audio?.[0]?.size || 0,
+          videoMimeType: (req as any).files?.video?.[0]?.mimetype,
+          audioMimeType: (req as any).files?.audio?.[0]?.mimetype
+        }
+      };
+
+      logger.error('게임 녹화 영상 업로드 실패 - 상세 정보', errorDetails);
+      
+      // 에러 유형에 따른 적절한 응답 코드 결정
+      let statusCode = 500;
+      let errorCode = 'UPLOAD_FAILED';
+      let reason = '파일 업로드 중 오류가 발생했습니다.';
+
+      if (error instanceof Error) {
+        if (error.message.includes('S3')) {
+          errorCode = 'S3_UPLOAD_FAILED';
+          reason = 'S3 업로드 중 오류가 발생했습니다.';
+        } else if (error.message.includes('파일')) {
+          errorCode = 'FILE_PROCESSING_FAILED';
+          reason = '파일 처리 중 오류가 발생했습니다.';
+        } else if (error.message.includes('데이터베이스') || error.message.includes('prisma')) {
+          errorCode = 'DATABASE_ERROR';
+          reason = '데이터베이스 저장 중 오류가 발생했습니다.';
+        }
+      }
+
+      res.status(statusCode).json({
         resultType: 'FAIL',
         error: {
-          errorCode: 'UPLOAD_FAILED',
-          reason: '파일 업로드 중 오류가 발생했습니다.',
+          errorCode: errorCode,
+          reason: reason,
           data: null
         },
         success: null
@@ -140,12 +172,23 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('영상 상태 조회 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          videoId: req.params.videoId
+        }
+      };
+
+      logger.error('영상 상태 조회 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
           errorCode: 'STATUS_CHECK_FAILED',
-          reason: '영상 상태 조회 중 오류가 발생했습니다.',
+          reason: '영상 상태 확인 중 오류가 발생했습니다.',
           data: null
         },
         success: null
@@ -177,7 +220,21 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('영상 목록 조회 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          userId: req.query.userId,
+          roomCode: req.query.roomCode,
+          page: req.query.page,
+          limit: req.query.limit
+        }
+      };
+
+      logger.error('영상 목록 조회 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -223,7 +280,19 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('영상 삭제 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          videoId: req.params.videoId,
+          userId: req.body.userId
+        }
+      };
+
+      logger.error('영상 삭제 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -264,16 +333,33 @@ export class VideoController {
       streamResult.stream.pipe(res);
 
     } catch (error) {
-      logger.error('영상 스트리밍 실패:', error);
-      res.status(500).json({
-        resultType: 'FAIL',
-        error: {
-          errorCode: 'STREAM_FAILED',
-          reason: '영상 스트리밍 중 오류가 발생했습니다.',
-          data: null
-        },
-        success: null
-      });
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          videoId: req.params.videoId,
+          hasRange: !!req.headers.range,
+          userAgent: req.headers['user-agent'],
+          rangeHeader: req.headers.range
+        }
+      };
+
+      logger.error('영상 스트리밍 실패 - 상세 정보', errorDetails);
+      
+      // 스트리밍 에러는 이미 응답이 시작되었을 수 있으므로 조심스럽게 처리
+      if (!res.headersSent) {
+        res.status(500).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'STREAM_FAILED',
+            reason: '영상 스트리밍 중 오류가 발생했습니다.',
+            data: null
+          },
+          success: null
+        });
+      }
     }
   };
 
@@ -307,7 +393,19 @@ export class VideoController {
       downloadResult.stream.pipe(res);
 
     } catch (error) {
-      logger.error('영상 다운로드 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          videoId: req.params.videoId,
+          userId: req.query.userId
+        }
+      };
+
+      logger.error('영상 다운로드 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -355,7 +453,18 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('하이라이트 추출 시작 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          roomCode: req.params.roomCode
+        }
+      };
+
+      logger.error('하이라이트 추출 시작 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -403,7 +512,18 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('하이라이트 추출 상태 조회 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          jobId: req.params.jobId
+        }
+      };
+
+      logger.error('하이라이트 추출 상태 조회 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -451,7 +571,18 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('하이라이트 영상 목록 조회 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          roomCode: req.params.roomCode
+        }
+      };
+
+      logger.error('하이라이트 영상 목록 조회 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {
@@ -495,7 +626,22 @@ export class VideoController {
       });
 
     } catch (error) {
-      logger.error('하이라이트 콜백 처리 실패:', error);
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        requestInfo: {
+          roomCode: req.params.roomCode,
+          callbackDataSize: JSON.stringify(req.body || {}).length,
+          callbackKeys: Object.keys(req.body || {}),
+          jobId: req.body?.jobId,
+          status: req.body?.status
+        }
+      };
+
+      logger.error('하이라이트 콜백 처리 실패 - 상세 정보', errorDetails);
+      
       res.status(500).json({
         resultType: 'FAIL',
         error: {

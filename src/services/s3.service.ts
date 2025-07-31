@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import logger from '../logger.js';
@@ -19,11 +20,22 @@ export interface S3DownloadUrl {
 export class S3Service {
   private s3Client: S3Client;
   private bucketName: string;
+  private bucketPrefix: string;
   private region: string;
 
   constructor() {
     this.region = process.env.AWS_REGION || 'ap-northeast-2';
-    this.bucketName = process.env.S3_BUCKET_NAME || 'gamecast-videos';
+    
+    // S3 버킷 이름과 접두사 분리
+    const bucketConfig = process.env.AWS_S3_BUCKET || 'gamecast-videos';
+    if (bucketConfig.includes('/')) {
+      const [bucket, ...prefixParts] = bucketConfig.split('/');
+      this.bucketName = bucket;
+      this.bucketPrefix = prefixParts.join('/');
+    } else {
+      this.bucketName = bucketConfig;
+      this.bucketPrefix = '';
+    }
     
     this.s3Client = new S3Client({
       region: this.region,
@@ -35,7 +47,11 @@ export class S3Service {
 
     logger.info('S3 서비스 초기화 완료', {
       region: this.region,
-      bucket: this.bucketName
+      bucket: this.bucketName,
+      prefix: this.bucketPrefix,
+      accessKeyIdPresent: !!process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKeyPresent: !!process.env.AWS_SECRET_ACCESS_KEY,
+      fullBucketConfig: process.env.AWS_S3_BUCKET
     });
   }
 
@@ -121,9 +137,19 @@ export class S3Service {
     } catch (error) {
       logger.error('S3 버퍼 업로드 실패', {
         s3Key: s3Key,
-        error: error
+        bufferSize: buffer.length,
+        contentType: contentType,
+        bucket: this.bucketName,
+        region: this.region,
+        error: error,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorCode: (error as any)?.code,
+        errorStatusCode: (error as any)?.$metadata?.httpStatusCode,
+        errorRequestId: (error as any)?.$metadata?.requestId,
+        errorStack: error instanceof Error ? error.stack : undefined
       });
-      throw new Error(`S3 버퍼 업로드 실패: ${error}`);
+      throw new Error(`S3 버퍼 업로드 실패: ${error instanceof Error ? error.message : error}`);
     }
   }
 
@@ -190,13 +216,16 @@ export class S3Service {
    */
   public generateS3Key(prefix: string, fileName: string, extension?: string): string {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const uuid = require('uuid').v4();
+    const uuid = uuidv4();
+    
+    // 버킷 접두사와 함께 키 생성
+    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${prefix}` : prefix;
     
     if (extension) {
-      return `${prefix}/${timestamp}/${uuid}.${extension}`;
+      return `${basePrefix}/${timestamp}/${uuid}.${extension}`;
     }
     
-    return `${prefix}/${timestamp}/${uuid}_${fileName}`;
+    return `${basePrefix}/${timestamp}/${uuid}_${fileName}`;
   }
 
   /**

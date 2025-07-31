@@ -1,5 +1,11 @@
-import cors from "cors";
+// 환경변수 로딩을 가장 먼저 실행 - 개발 환경에서는 .env.dev 파일 사용
 import dotenv from "dotenv";
+const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.dev';
+console.log('Loading env file:', envFile);
+dotenv.config({ path: envFile });
+console.log('PORT from env:', process.env.PORT);
+
+import cors from "cors";
 import express from "express";
 import path from "path";
 import { createServer } from "http";
@@ -23,12 +29,6 @@ import videoRoutes from "./routes/video.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
-
-// 환경변수 로딩 - 개발 환경에서는 .env.dev 파일 사용
-const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.dev';
-console.log('Loading env file:', envFile);
-dotenv.config({ path: envFile });
-console.log('PORT from env:', process.env.PORT);
 
 // 필요한 환경변수 확인
 if (!process.env.DATABASE_URL) {

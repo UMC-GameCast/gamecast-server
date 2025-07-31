@@ -14,15 +14,48 @@ const upload = multer({
     files: 2 // 비디오 + 오디오 최대 2개 파일
   },
   fileFilter: (req, file, cb) => {
-    const allowedVideoTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
-    const allowedAudioTypes = ['audio/mp3', 'audio/wav', 'audio/aac', 'audio/webm'];
+    const allowedVideoTypes = [
+      'video/mp4', 
+      'video/webm', 
+      'video/avi', 
+      'video/mov',
+      'video/quicktime',
+      'video/x-msvideo'
+    ];
+    const allowedAudioTypes = [
+      'audio/mp3',
+      'audio/mpeg',   // MP3 파일 지원
+      'audio/wav',
+      'audio/wave',
+      'audio/x-wav',
+      'audio/aac',
+      'audio/webm',
+      'audio/ogg'
+    ];
     
-    if (file.fieldname === 'video' && allowedVideoTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else if (file.fieldname === 'audio' && allowedAudioTypes.includes(file.mimetype)) {
-      cb(null, true);
+    // 디버깅용 로그 추가
+    console.log(`파일 필터 체크: fieldname=${file.fieldname}, mimetype=${file.mimetype}`);
+    
+    if (file.fieldname === 'video') {
+      if (allowedVideoTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        console.log(`비디오 파일 형식 오류: ${file.mimetype}`);
+        const error = new Error(`지원하지 않는 비디오 형식입니다: ${file.mimetype}`) as any;
+        cb(error, false);
+      }
+    } else if (file.fieldname === 'audio') {
+      if (allowedAudioTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        console.log(`오디오 파일 형식 오류: ${file.mimetype}`);
+        const error = new Error(`지원하지 않는 오디오 형식입니다: ${file.mimetype}`) as any;
+        cb(error, false);
+      }
     } else {
-      cb(new Error(`지원하지 않는 파일 형식입니다: ${file.mimetype}`), false);
+      console.log(`알 수 없는 필드명: ${file.fieldname}`);
+      const error = new Error(`알 수 없는 파일 필드입니다: ${file.fieldname}`) as any;
+      cb(error, false);
     }
   }
 });
@@ -69,12 +102,6 @@ const upload = multer({
  *           type: string
  *           description: 영상 설명
  *           example: "Epic gaming moment"
- *         tags:
- *           type: array
- *           items:
- *             type: string
- *           description: 태그 목록
- *           example: ["gaming", "highlight", "epic"]
  *     
  *     VideoResult:
  *       type: object
@@ -211,10 +238,6 @@ const upload = multer({
  *                 type: string
  *                 description: 영상 설명
  *                 example: "Epic gaming moment"
- *               tags:
- *                 type: string
- *                 description: 태그 목록 (JSON 문자열)
- *                 example: '["gaming", "highlight", "epic"]'
  *     responses:
  *       201:
  *         description: 영상 업로드 성공

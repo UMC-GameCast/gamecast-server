@@ -94,8 +94,24 @@ export interface DownloadResult {
 export class VideoService {
   private readonly uploadDir: string;
   private readonly maxFileSize = 500 * 1024 * 1024; // 500MB
-  private readonly allowedVideoTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
-  private readonly allowedAudioTypes = ['audio/mp3', 'audio/wav', 'audio/aac', 'audio/webm'];
+  private readonly allowedVideoTypes = [
+    'video/mp4', 
+    'video/webm', 
+    'video/avi', 
+    'video/mov',
+    'video/quicktime',
+    'video/x-msvideo'
+  ];
+  private readonly allowedAudioTypes = [
+    'audio/mp3',
+    'audio/mpeg',   // MP3 파일 지원 추가
+    'audio/wav',
+    'audio/wave',
+    'audio/x-wav',
+    'audio/aac',
+    'audio/webm',
+    'audio/ogg'
+  ];
   private readonly s3Service: S3Service;
   private readonly highlightService: HighlightExtractionService;
 
@@ -194,6 +210,7 @@ export class VideoService {
 
       // 2. S3에 오디오 파일 업로드 (선택사항)
       let audioS3Key: string | undefined;
+      let audioUploadResult: any = null;
       if (data.audioFile) {
         audioS3Key = this.s3Service.generateS3Key(
           data.metadata.roomCode,
@@ -201,7 +218,7 @@ export class VideoService {
           'original'
         ) + '_audio' + path.extname(data.audioFile.originalname);
 
-        const audioUploadResult = await this.s3Service.uploadBuffer(
+        audioUploadResult = await this.s3Service.uploadBuffer(
           data.audioFile.buffer,
           audioS3Key,
           data.audioFile.mimetype
@@ -229,35 +246,19 @@ export class VideoService {
         await fs.writeFile(audioPath, data.audioFile.buffer);
       }
 
-      // 4. 데이터베이스에 영상 정보 저장
-      const uploadRecord = await prisma.session.create({
-        data: {
-          id: videoId,
-          sid: `video_${videoId}`,
-          data: JSON.stringify({
-            roomCode: data.metadata.roomCode,
-            userId: data.metadata.userId,
-            gameTitle: data.metadata.gameTitle,
-            videoPath: videoPath,
-            audioPath: audioPath,
-            videoS3Key: videoS3Key,
-            audioS3Key: audioS3Key,
-            duration: data.metadata.duration,
-            resolution: data.metadata.resolution,
-            fps: data.metadata.fps,
-            description: data.metadata.description,
-            tags: data.metadata.tags,
-            status: 'completed',
-            fileSize: data.videoFile.size + (data.audioFile?.size || 0),
-            type: 'game_recording',
-            uploadedAt: new Date().toISOString()
-          }),
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30일 후 만료
-        }
+      // 4. 우선 임시로 Session 테이블에 저장 (나중에 proper 테이블로 이동)
+      // S3 업로드 성공 - 현재는 로그만 남기고 DB 저장은 생략 (추후 proper 테이블 구현 시 추가)
+      logger.info('게임 녹화 업로드 처리 완료', {
+        videoId,
+        roomCode: data.metadata.roomCode,
+        userId: data.metadata.userId,
+        videoS3Key: videoS3Key,
+        audioS3Key: audioS3Key,
+        status: 'completed'
       });
 
       const result: VideoResult = {
-        videoId: uploadRecord.id,
+        videoId: videoId,
         videoPath: videoPath,
         audioPath: audioPath,
         metadata: data.metadata,
@@ -274,10 +275,18 @@ export class VideoService {
       return result;
 
     } catch (error) {
-      logger.error('게임 녹화 업로드 처리 실패', {
+      logger.error('게임 녹화 업로드 처리 실패 - 상세 정보', {
         videoId,
         roomCode: data.metadata.roomCode,
-        error: error
+        userId: data.metadata.userId,
+        videoFileSize: data.videoFile.size,
+        audioFileSize: data.audioFile?.size || 0,
+        videoMimeType: data.videoFile.mimetype,
+        audioMimeType: data.audioFile?.mimetype || 'none',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error?.constructor?.name || typeof error,
+        timestamp: new Date().toISOString()
       });
       
       // 실패시 업로드된 파일 정리
@@ -289,11 +298,18 @@ export class VideoService {
         if (data.audioFile) {
           await fs.unlink(audioPath).catch(() => {});
         }
+        logger.info('실패한 업로드 파일 정리 완료', { videoId });
       } catch (cleanupError) {
-        logger.error('파일 정리 실패', cleanupError);
+        logger.error('파일 정리 실패 - 상세 정보', {
+          videoId,
+          cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          cleanupErrorStack: cleanupError instanceof Error ? cleanupError.stack : undefined
+        });
       }
 
-      throw new Error('파일 업로드 처리 중 오류가 발생했습니다.');
+      // 원본 에러 정보를 포함한 새로운 에러 던지기
+      const originalError = error instanceof Error ? error.message : String(error);
+      throw new Error(`파일 업로드 처리 실패: ${originalError}`);
     }
   }
 
