@@ -8,6 +8,8 @@ on:
       - 'src/**'
       - 'routes/**'
       - 'controllers/**'
+      - 'services/**'
+      - 'utils/**'
       - 'models/**'
       - 'middleware/**'
       - 'config/**'
@@ -135,7 +137,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: ./Dockerfile
           target: runner
           platforms: linux/amd64
           push: true
@@ -182,7 +184,7 @@ jobs:
             EXPRESS_APP_IMAGE_TAG=${{ needs.set-environment.outputs.version }}
             NODE_ENV=${{ matrix.environment }}
             API_PORT=${{ secrets.API_PORT }}
-            PORT=3000
+            PORT=${{ secrets.API_PORT || '8889' }}
             
             # Database
             DATABASE_URL=${{ secrets.DATABASE_URL }}
@@ -230,7 +232,7 @@ jobs:
             
             # Health check
             for i in {1..10}; do
-              if curl -f http://localhost:3000/health; then
+              if curl -f http://localhost:8889/health; then
                 echo "Deployment successful!"
                 exit 0
               fi
