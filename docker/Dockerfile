@@ -1,6 +1,12 @@
 # Multi-stage build for production optimization
 FROM node:20-alpine AS base
 
+# Install necessary system dependencies for Prisma
+RUN apk add --no-cache \
+    openssl \
+    libc6-compat \
+    && rm -rf /var/cache/apk/*
+
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
@@ -9,7 +15,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --only=production && npm cache clean --force
 
 # Development stage
 FROM base AS dev
@@ -19,7 +25,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (including dev dependencies)
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -38,10 +44,13 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
 
 # Build the application
 RUN npm run build
@@ -55,21 +64,24 @@ ENV NODE_ENV=production
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN adduser --system --uid 1001 gamecast
 
-# Copy production dependencies
-COPY --from=deps /app/node_modules ./node_modules
+# Copy all dependencies from builder (includes Prisma client)
+COPY --from=builder --chown=gamecast:nodejs /app/node_modules ./node_modules
 
-# Copy built application
-COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nextjs:nodejs /app/package*.json ./
+# Copy built application and source files for Swagger JSDoc
+COPY --from=builder --chown=gamecast:nodejs /app/dist ./dist
+COPY --from=builder --chown=gamecast:nodejs /app/src ./src
+COPY --from=builder --chown=gamecast:nodejs /app/package*.json ./
+COPY --from=builder --chown=gamecast:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=gamecast:nodejs /app/tsconfig.json ./
 
 # Create necessary directories
-RUN mkdir -p /app/logs && chown nextjs:nodejs /app/logs
-RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+RUN mkdir -p /app/logs && chown gamecast:nodejs /app/logs
+RUN mkdir -p /app/uploads && chown gamecast:nodejs /app/uploads
 
 # Switch to non-root user
-USER nextjs
+USER gamecast
 
 # Expose port
 EXPOSE 3000
