@@ -9,69 +9,6 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
   const router = express.Router();
   const roomController = new RoomController(webrtcService);
   
-  // 방 생성
-  router.post(
-    '/',
-    rateLimitMiddleware.roomCreation, // 방 생성 특별 제한
-    validateRequest(createRoomSchema),
-    roomController.createRoom.bind(roomController)
-  );
-  
-  // 방 조회
-  router.get(
-    '/:roomCode',
-    roomController.getRoomInfo.bind(roomController)
-  );
-
-  // 방 목록 조회
-  router.get(
-    '/',
-    roomController.getAllRooms.bind(roomController)
-  );
-
-  // 방 참여
-  router.post(
-    '/join',
-    validateRequest(joinRoomSchema),
-    roomController.joinRoom.bind(roomController)
-  );
-
-  // 방 나가기
-  router.post(
-    '/leave',
-    roomController.leaveRoom.bind(roomController)
-  );
-
-  // 방 종료
-  router.delete(
-    '/end',
-    roomController.endRoom.bind(roomController)
-  );
-
-  // 방 상태 변경
-  router.patch(
-    '/state',
-    roomController.updateRoomState.bind(roomController)
-  );
-
-  // 준비 상태 업데이트
-  router.patch(
-    '/preparation',
-    validateRequest(updatePreparationSchema),
-    roomController.updatePreparation.bind(roomController)
-  );
-
-  // 개발용: 모든 방 삭제
-  router.delete(
-    '/dev/all',
-    roomController.deleteAllRooms.bind(roomController)
-  );
-  
-  return router;
-}
-
-const router = express.Router();
-const roomController = new RoomController();
 
 /**
  * @swagger
@@ -245,12 +182,13 @@ const roomController = new RoomController();
  *                 data: null
  *               success: null
  */
-router.post(
-  '/',
-  rateLimitMiddleware.roomCreation, // 방 생성 특별 제한
-  validateRequest(createRoomSchema),
-  roomController.createRoom.bind(roomController)
-);
+  router.post(
+    '/',
+    rateLimitMiddleware.roomCreation, // 방 생성 특별 제한
+    validateRequest(createRoomSchema),
+    roomController.createRoom.bind(roomController)
+  );
+  
 
 /**
  * @swagger
@@ -366,10 +304,103 @@ router.post(
  *                   type: null
  *                   example: null
  */
-router.get(
-  '/:roomCode',
-  roomController.getRoomInfo.bind(roomController)
-);
+  router.get(
+    '/:roomCode',
+    roomController.getRoomInfo.bind(roomController)
+  );
+
+
+/**
+ * @swagger
+ * /api/rooms:
+ *   get:
+ *     summary: 방 목록 조회 (관리자용)
+ *     tags: [Rooms]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: 방 목록 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "550e8400-e29b-41d4-a716-446655440000"
+ *                           roomCode:
+ *                             type: string
+ *                             example: "ABC123"
+ *                           roomName:
+ *                             type: string
+ *                             example: "즐거운 게임 방"
+ *                           maxCapacity:
+ *                             type: integer
+ *                             example: 4
+ *                           currentCapacity:
+ *                             type: integer
+ *                             example: 2
+ *                           roomState:
+ *                             type: string
+ *                             example: "waiting"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-07-26T10:30:00.000Z"
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                           example: 1
+ *                         size:
+ *                           type: integer
+ *                           example: 20
+ *                         totalElements:
+ *                           type: integer
+ *                           example: 45
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 3
+ *                         hasNext:
+ *                           type: boolean
+ *                           example: true
+ *                         hasPrevious:
+ *                           type: boolean
+ *                           example: false
+ */
+  router.get(
+    '/',
+    roomController.getAllRooms.bind(roomController)
+  );
 
 /**
  * @swagger
@@ -547,11 +578,11 @@ router.get(
  *               '200':
  *                 description: 실시간 이벤트 수신 성공
  */
-router.post(
-  '/join',
-  validateRequest(joinRoomSchema),
-  roomController.joinRoom.bind(roomController)
-);
+  router.post(
+    '/join',
+    validateRequest(joinRoomSchema),
+    roomController.joinRoom.bind(roomController)
+  );
 
 /**
  * @swagger
@@ -678,10 +709,214 @@ router.post(
  *               '200':
  *                 description: 실시간 이벤트 수신 성공
  */
-router.post(
-  '/leave',
-  roomController.leaveRoom.bind(roomController)
-);
+  router.post(
+    '/leave',
+    roomController.leaveRoom.bind(roomController)
+  );
+
+
+/**
+ * @swagger
+ * /api/rooms/end:
+ *   delete:
+ *     summary: 방 종료 (방장만 가능)
+ *     tags: [Rooms]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hostGuestId
+ *             properties:
+ *               hostGuestId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: 방장 게스트 사용자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
+ *     responses:
+ *       200:
+ *         description: 방 종료 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "방이 성공적으로 종료되었습니다."
+ *       400:
+ *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "방장 권한이 필요합니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ *       404:
+ *         description: 방을 찾을 수 없음 또는 권한 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없거나 권한이 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ */
+  router.delete(
+    '/end',
+    roomController.endRoom.bind(roomController)
+  );
+
+
+/**
+ * @swagger
+ * /api/rooms/state:
+ *   put:
+ *     summary: 방 상태 변경 (방장만 가능)
+ *     tags: [Rooms]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hostGuestId
+ *               - roomState
+ *             properties:
+ *               hostGuestId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: 방장 게스트 사용자 ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
+ *               roomState:
+ *                 type: string
+ *                 enum: [waiting, active, recording, expired]
+ *                 description: 변경할 방 상태
+ *                 example: "active"
+ *     responses:
+ *       200:
+ *         description: 방 상태 변경 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                   example: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "방 상태가 변경되었습니다."
+ *                     roomState:
+ *                       type: string
+ *                       example: "active"
+ *       400:
+ *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "BAD_REQUEST"
+ *                     reason:
+ *                       type: string
+ *                       example: "유효하지 않은 방 상태입니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ *       404:
+ *         description: 방을 찾을 수 없음 또는 권한 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "FAIL"
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     errorCode:
+ *                       type: string
+ *                       example: "NOT_FOUND"
+ *                     reason:
+ *                       type: string
+ *                       example: "방을 찾을 수 없거나 권한이 없습니다."
+ *                     data:
+ *                       type: object
+ *                       example: null
+ *                 success:
+ *                   type: null
+ *                   example: null
+ */
+  router.patch(
+    '/state',
+    roomController.updateRoomState.bind(roomController)
+  );
+
 
 /**
  * @swagger
@@ -788,338 +1023,12 @@ router.post(
  *                   type: null
  *                   example: null
  */
-router.put(
-  '/preparation',
-  validateRequest(updatePreparationSchema),
-  roomController.updatePreparation.bind(roomController)
-);
+  router.patch(
+    '/preparation',
+    validateRequest(updatePreparationSchema),
+    roomController.updatePreparation.bind(roomController)
+  );
 
-/**
- * @swagger
- * /api/rooms/cleanup:
- *   delete:
- *     summary: 만료된 방 정리 (관리자용)
- *     tags: [Rooms]
- *     responses:
- *       200:
- *         description: 정리 완료
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 success:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                     deleted_rooms:
- *                       type: integer
- *                     deleted_guests:
- *                       type: integer
- */
-router.delete(
-  '/cleanup',
-  roomController.cleanupRooms.bind(roomController)
-);
-
-/**
- * @swagger
- * /api/rooms:
- *   get:
- *     summary: 방 목록 조회 (관리자용)
- *     tags: [Rooms]
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           minimum: 1
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *           default: 20
- *     responses:
- *       200:
- *         description: 방 목록 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 error:
- *                   type: null
- *                   example: null
- *                 success:
- *                   type: object
- *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           id:
- *                             type: string
- *                             format: uuid
- *                             example: "550e8400-e29b-41d4-a716-446655440000"
- *                           roomCode:
- *                             type: string
- *                             example: "ABC123"
- *                           roomName:
- *                             type: string
- *                             example: "즐거운 게임 방"
- *                           maxCapacity:
- *                             type: integer
- *                             example: 4
- *                           currentCapacity:
- *                             type: integer
- *                             example: 2
- *                           roomState:
- *                             type: string
- *                             example: "waiting"
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2025-07-26T10:30:00.000Z"
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         size:
- *                           type: integer
- *                           example: 20
- *                         totalElements:
- *                           type: integer
- *                           example: 45
- *                         totalPages:
- *                           type: integer
- *                           example: 3
- *                         hasNext:
- *                           type: boolean
- *                           example: true
- *                         hasPrevious:
- *                           type: boolean
- *                           example: false
- */
-router.get(
-  '/',
-  roomController.getAllRooms.bind(roomController)
-);
-
-/**
- * @swagger
- * /api/rooms/end:
- *   delete:
- *     summary: 방 종료 (방장만 가능)
- *     tags: [Rooms]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - hostGuestId
- *             properties:
- *               hostGuestId:
- *                 type: string
- *                 format: uuid
- *                 description: 방장 게스트 사용자 ID
- *                 example: "550e8400-e29b-41d4-a716-446655440001"
- *     responses:
- *       200:
- *         description: 방 종료 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 error:
- *                   type: null
- *                   example: null
- *                 success:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                       example: "방이 성공적으로 종료되었습니다."
- *       400:
- *         description: 잘못된 요청
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "FAIL"
- *                 error:
- *                   type: object
- *                   properties:
- *                     errorCode:
- *                       type: string
- *                       example: "BAD_REQUEST"
- *                     reason:
- *                       type: string
- *                       example: "방장 권한이 필요합니다."
- *                     data:
- *                       type: object
- *                       example: null
- *                 success:
- *                   type: null
- *                   example: null
- *       404:
- *         description: 방을 찾을 수 없음 또는 권한 없음
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "FAIL"
- *                 error:
- *                   type: object
- *                   properties:
- *                     errorCode:
- *                       type: string
- *                       example: "NOT_FOUND"
- *                     reason:
- *                       type: string
- *                       example: "방을 찾을 수 없거나 권한이 없습니다."
- *                     data:
- *                       type: object
- *                       example: null
- *                 success:
- *                   type: null
- *                   example: null
- */
-router.delete(
-  '/end',
-  rateLimitMiddleware.general,
-  roomController.endRoom.bind(roomController)
-);
-
-/**
- * @swagger
- * /api/rooms/state:
- *   put:
- *     summary: 방 상태 변경 (방장만 가능)
- *     tags: [Rooms]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - hostGuestId
- *               - roomState
- *             properties:
- *               hostGuestId:
- *                 type: string
- *                 format: uuid
- *                 description: 방장 게스트 사용자 ID
- *                 example: "550e8400-e29b-41d4-a716-446655440001"
- *               roomState:
- *                 type: string
- *                 enum: [waiting, active, recording, expired]
- *                 description: 변경할 방 상태
- *                 example: "active"
- *     responses:
- *       200:
- *         description: 방 상태 변경 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 error:
- *                   type: null
- *                   example: null
- *                 success:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                       example: "방 상태가 변경되었습니다."
- *                     roomState:
- *                       type: string
- *                       example: "active"
- *       400:
- *         description: 잘못된 요청
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "FAIL"
- *                 error:
- *                   type: object
- *                   properties:
- *                     errorCode:
- *                       type: string
- *                       example: "BAD_REQUEST"
- *                     reason:
- *                       type: string
- *                       example: "유효하지 않은 방 상태입니다."
- *                     data:
- *                       type: object
- *                       example: null
- *                 success:
- *                   type: null
- *                   example: null
- *       404:
- *         description: 방을 찾을 수 없음 또는 권한 없음
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "FAIL"
- *                 error:
- *                   type: object
- *                   properties:
- *                     errorCode:
- *                       type: string
- *                       example: "NOT_FOUND"
- *                     reason:
- *                       type: string
- *                       example: "방을 찾을 수 없거나 권한이 없습니다."
- *                     data:
- *                       type: object
- *                       example: null
- *                 success:
- *                   type: null
- *                   example: null
- */
-router.put(
-  '/state',
-  rateLimitMiddleware.general,
-  roomController.updateRoomState.bind(roomController)
-);
 
 /**
  * @swagger
@@ -1157,9 +1066,42 @@ router.put(
  *       400:
  *         description: 프로덕션 환경에서 실행 시도
  */
+  router.delete(
+    '/dev/clear-all',
+    roomController.deleteAllRooms.bind(roomController)
+  );
+  
+
+  /**
+ * @swagger
+ * /api/rooms/cleanup:
+ *   delete:
+ *     summary: 만료된 방 정리 (관리자용)
+ *     tags: [Rooms]
+ *     responses:
+ *       200:
+ *         description: 정리 완료
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                     deleted_rooms:
+ *                       type: integer
+ *                     deleted_guests:
+ *                       type: integer
+ */
 router.delete(
-  '/dev/clear-all',
-  roomController.deleteAllRooms.bind(roomController)
+  '/cleanup',
+  roomController.cleanupRooms.bind(roomController)
 );
 
 /**
@@ -1573,5 +1515,5 @@ router.delete(
  *           description: 이벤트 발생 시간
  *           example: "2025-07-31T01:30:00.000Z"
  */
-
-export default router;
+  return router;
+}
