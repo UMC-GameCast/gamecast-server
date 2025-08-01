@@ -230,6 +230,13 @@ jobs:
             # Force pull new image
             sudo docker pull ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest
             
+            # Update docker-compose.yml to use new ECR image
+            sed -i "s|image: .*gamecast:.*|image: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest|g" docker-compose.yml
+            
+            # Verify the change
+            echo "Updated docker-compose.yml:"
+            grep "image:" docker-compose.yml
+            
             # Stop and remove existing container
             sudo docker-compose down --remove-orphans
             sudo docker container prune -f
