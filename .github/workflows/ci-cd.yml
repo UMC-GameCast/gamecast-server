@@ -230,12 +230,9 @@ jobs:
             # Force pull new image
             sudo docker pull ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest
             
-            # Stop and remove existing container (force stop)
+            # Stop and remove existing container
             sudo docker-compose down --remove-orphans
             sudo docker container prune -f
-            
-            # Force remove old local image (if different from ECR)
-            sudo docker rmi ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest --force || true
             
             # Deploy with forced recreation
             sudo docker-compose up -d --force-recreate --pull always
