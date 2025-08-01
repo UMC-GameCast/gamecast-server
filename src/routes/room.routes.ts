@@ -1070,39 +1070,38 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
     '/dev/clear-all',
     roomController.deleteAllRooms.bind(roomController)
   );
-  
 
   /**
- * @swagger
- * /api/rooms/cleanup:
- *   delete:
- *     summary: 만료된 방 정리 (관리자용)
- *     tags: [Rooms]
- *     responses:
- *       200:
- *         description: 정리 완료
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 success:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                     deleted_rooms:
- *                       type: integer
- *                     deleted_guests:
- *                       type: integer
- */
-router.delete(
-  '/cleanup',
-  roomController.cleanupRooms.bind(roomController)
-);
+   * @swagger
+   * /api/rooms/cleanup:
+   *   delete:
+   *     summary: 만료된 방 정리 (관리자용)
+   *     tags: [Rooms]
+   *     responses:
+   *       200:
+   *         description: 정리 완료
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 resultType:
+   *                   type: string
+   *                   example: "SUCCESS"
+   *                 success:
+   *                   type: object
+   *                   properties:
+   *                     message:
+   *                       type: string
+   *                     deleted_rooms:
+   *                       type: integer
+   *                     deleted_guests:
+   *                       type: integer
+   */
+  router.delete(
+    '/cleanup',
+    roomController.cleanupRooms.bind(roomController)
+  );
 
 /**
  * @swagger
@@ -1517,3 +1516,5 @@ router.delete(
  */
   return router;
 }
+
+export default createRoomRoutes;
