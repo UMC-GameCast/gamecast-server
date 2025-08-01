@@ -139,3 +139,7 @@ dist
 .env.*
 .env.prod
 *.tar
+*.mp4
+*.mp3
+*.m4a
+*.txt
