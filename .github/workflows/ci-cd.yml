@@ -121,6 +121,12 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           mask-password: 'true'
+
+      - name: Verify ECR login
+        run: |
+          echo "ECR Registry: ${{ steps.login-ecr.outputs.registry }}"
+          aws ecr describe-repositories --repository-names ${{ env.REPOSITORY }} || \
+          aws ecr create-repository --repository-name ${{ env.REPOSITORY }}
       
       - name: Extract metadata
         id: meta
@@ -221,18 +227,22 @@ jobs:
             export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
             
-            # Login to ECR and deploy
+            # Login to ECR and pull latest image
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ env.REGISTRY }}
             
-            # Stop existing container gracefully
-            sudo docker-compose stop gamecast-api || true
-            sudo docker-compose rm -f gamecast-api || true
+            # Force pull new image
+            sudo docker pull ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ needs.set-environment.outputs.version }}
             
-            # Clean up old images
+            # Stop and remove existing container
+            sudo docker-compose down
+            sudo docker container prune -f
+            
+            # Remove old local images to force using ECR image
+            sudo docker rmi gamecast-api:latest || true
             sudo docker images --filter=reference="${{ env.REGISTRY }}/${{ env.REPOSITORY }}" --format="table {{.Repository}}:{{.Tag}}" | grep -v "${{ needs.set-environment.outputs.version }}" | tail -n +2 | xargs -r sudo docker rmi || true
             
-            # Deploy new version
-            sudo docker-compose up -d gamecast-api
+            # Deploy with forced recreation
+            sudo docker-compose up -d --force-recreate --pull always
             
             # Wait for service to be ready
             sleep 30
