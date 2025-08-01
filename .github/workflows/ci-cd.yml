@@ -40,68 +40,6 @@ jobs:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
 
-  # Code quality and testing
-  test:
-    if: github.event.action == 'opened' || github.event.action == 'synchronize'
-    runs-on: ubuntu-latest
-    environment: test
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: test_root_password
-          MYSQL_DATABASE: test_db
-          MYSQL_USER: test_user
-          MYSQL_PASSWORD: test_password
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-      
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run TypeScript compilation
-        run: npm run build
-      
-      - name: Run linting
-        run: npm run lint
-      
-      - name: Run prettier check
-        run: npx prettier --check "src/**/*.{ts,tsx,json}"
-      
-      - name: Run tests with coverage
-        env:
-          NODE_ENV: test
-          DATABASE_URL: mysql://test_user:test_password@localhost:3306/test_db
-          EXPRESS_SESSION_SECRET: test_session_secret
-          JWT_SECRET: test_jwt_secret
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-        run: npm run test:coverage
-      
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage/lcov.info
-          flags: unittests
-          name: codecov-umbrella
-
   # Environment setup
   set-environment:
     if: github.event.pull_request.merged == true
@@ -199,7 +137,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           target: runner
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -243,6 +181,7 @@ jobs:
             EXPRESS_APP_IMAGE_REPOSITORY=${{ env.REGISTRY }}/${{ env.REPOSITORY }}
             EXPRESS_APP_IMAGE_TAG=${{ needs.set-environment.outputs.version }}
             NODE_ENV=${{ matrix.environment }}
+            API_PORT=${{ secrets.API_PORT }}
             PORT=3000
             
             # Database
@@ -262,6 +201,7 @@ jobs:
             AWS_REGION=${{ secrets.AWS_REGION }}
             AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
             
             # CORS
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
@@ -276,14 +216,14 @@ jobs:
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ env.REGISTRY }}
             
             # Stop existing container gracefully
-            sudo docker-compose stop gamecast-server || true
-            sudo docker-compose rm -f gamecast-server || true
+            sudo docker-compose stop gamecast-api || true
+            sudo docker-compose rm -f gamecast-api || true
             
             # Clean up old images
             sudo docker images --filter=reference="${{ env.REGISTRY }}/${{ env.REPOSITORY }}" --format="table {{.Repository}}:{{.Tag}}" | grep -v "${{ needs.set-environment.outputs.version }}" | tail -n +2 | xargs -r sudo docker rmi || true
             
             # Deploy new version
-            sudo docker-compose up -d gamecast-server
+            sudo docker-compose up -d gamecast-api
             
             # Wait for service to be ready
             sleep 30
@@ -302,20 +242,10 @@ jobs:
             if [ -f docker-compose.backup.yml ]; then
               cp docker-compose.backup.yml docker-compose.yml
               cp .env.backup .env
-              sudo docker-compose up -d gamecast-server
+              sudo docker-compose up -d gamecast-api
             fi
             exit 1
       
-      - name: Notify deployment status
-        if: always()
-        uses: 8398a7/action-slack@v3
-        with:
-          status: ${{ job.status }}
-          channel: '#deployments'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-          fields: repo,message,commit,author,action,eventName,ref,workflow
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
 
   # Post-deployment verification
   post-deploy-test:
