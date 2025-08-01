@@ -235,7 +235,7 @@ jobs:
             sudo docker container prune -f
             
             # Force remove old local image (if different from ECR)
-            sudo docker rmi gamecast-api:latest --force || true
+            sudo docker rmi ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest --force || true
             
             # Deploy with forced recreation
             sudo docker-compose up -d --force-recreate --pull always
