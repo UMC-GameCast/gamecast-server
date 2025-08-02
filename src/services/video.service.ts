@@ -114,6 +114,19 @@ export class VideoService {
   ];
   private readonly s3Service: S3Service;
   private readonly highlightService: HighlightExtractionService;
+  
+  // 방별 영상 정보를 임시 저장할 Map (실제로는 Redis 등을 사용하는 것이 좋음)
+  private roomVideos: Map<string, Array<{
+    userId: string;
+    videoS3Key: string;
+    audioS3Key?: string;
+    metadata: {
+      gameTitle: string;
+      duration: number;
+      resolution: string;
+      fps: number;
+    }
+  }>> = new Map();
 
   constructor() {
     this.uploadDir = path.join(process.cwd(), 'uploads');
@@ -264,31 +277,45 @@ export class VideoService {
         audioPath = audioUploadResult?.location;
       }
 
-      // 4. 우선 임시로 Session 테이블에 저장 (나중에 proper 테이블로 이동)
-      // S3 업로드 성공 - 현재는 로그만 남기고 DB 저장은 생략 (추후 proper 테이블 구현 시 추가)
-      logger.info('게임 녹화 업로드 처리 완료', {
+      // 3. 방별 영상 정보를 메모리에 저장 (하이라이트 추출용)
+      const videoInfo = {
+        userId: data.metadata.userId,
+        videoS3Key: videoS3Key,
+        audioS3Key: audioS3Key,
+        metadata: {
+          gameTitle: data.metadata.gameTitle,
+          duration: data.metadata.duration,
+          resolution: data.metadata.resolution,
+          fps: data.metadata.fps
+        }
+      };
+
+      // 해당 방의 영상 목록에 추가
+      if (!this.roomVideos.has(data.metadata.roomCode)) {
+        this.roomVideos.set(data.metadata.roomCode, []);
+      }
+      this.roomVideos.get(data.metadata.roomCode)!.push(videoInfo);
+
+      logger.info('게임 녹화 S3 업로드 완료', {
         videoId,
         roomCode: data.metadata.roomCode,
         userId: data.metadata.userId,
         videoS3Key: videoS3Key,
         audioS3Key: audioS3Key,
-        status: 'completed'
+        videoSize: data.videoFile.size,
+        audioSize: data.audioFile?.size || 0,
+        status: 'completed',
+        roomVideoCount: this.roomVideos.get(data.metadata.roomCode)!.length
       });
 
       const result: VideoResult = {
         videoId: videoId,
-        videoPath: videoPath,
-        audioPath: audioPath,
+        videoPath: videoUploadResult.location, // S3 URL 사용
+        audioPath: audioUploadResult?.location, // S3 URL 사용
         metadata: data.metadata,
         uploadedAt: new Date(),
         status: 'completed'
       };
-
-      logger.info('게임 녹화 업로드 처리 완료', {
-        videoId,
-        roomCode: data.metadata.roomCode,
-        userId: data.metadata.userId
-      });
       
       return result;
 
@@ -587,51 +614,38 @@ export class VideoService {
    */
   public async startHighlightExtraction(roomCode: string): Promise<{ jobId: string; status: string }> {
     try {
-      logger.info('하이라이트 추출 프로세스 시작', { roomCode });
-
-      // 해당 방의 모든 영상 조회
-      const videoRecords = await prisma.session.findMany({
-        where: {
-          data: {
-            contains: roomCode
-          }
-        }
+      logger.info('하이라이트 추출 프로세스 시작', { 
+        roomCode,
+        memoryKeysCount: this.roomVideos.size,
+        allRoomCodes: Array.from(this.roomVideos.keys())
       });
 
-      const roomVideos = videoRecords
-        .map(record => {
-          try {
-            const data = JSON.parse(record.data || '{}');
-            if (data.type === 'game_recording' && data.roomCode === roomCode) {
-              return {
-                sessionId: record.id,
-                ...data
-              };
-            }
-            return null;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
+      // 메모리에서 해당 방의 영상 정보 조회
+      const videos = this.roomVideos.get(roomCode) || [];
 
-      if (roomVideos.length === 0) {
+      logger.info('방별 영상 정보 조회 결과', {
+        roomCode,
+        videosFound: videos.length,
+        videoDetails: videos.map(v => ({
+          userId: v.userId,
+          videoS3Key: v.videoS3Key,
+          audioS3Key: v.audioS3Key,
+          gameTitle: v.metadata.gameTitle
+        }))
+      });
+
+      if (videos.length === 0) {
         throw new Error('해당 방에 업로드된 영상이 없습니다.');
       }
 
       // 하이라이트 추출 요청 데이터 구성
       const extractionRequest: VideoProcessingRequest = {
         roomCode: roomCode,
-        videos: roomVideos.map(video => ({
+        videos: videos.map(video => ({
           userId: video.userId,
           videoS3Key: video.videoS3Key,
           audioS3Key: video.audioS3Key,
-          metadata: {
-            gameTitle: video.gameTitle,
-            duration: video.duration,
-            resolution: video.resolution,
-            fps: video.fps
-          }
+          metadata: video.metadata
         })),
         callbackUrl: this.highlightService.generateCallbackUrl(roomCode)
       };
@@ -642,7 +656,7 @@ export class VideoService {
       logger.info('하이라이트 추출 요청 성공', {
         roomCode: roomCode,
         jobId: response.jobId,
-        videoCount: roomVideos.length
+        videoCount: videos.length
       });
 
       return {
@@ -657,6 +671,23 @@ export class VideoService {
       });
       throw error;
     }
+  }
+
+  /**
+   * 디버깅용: 메모리에 저장된 방별 영상 정보 조회
+   */
+  public getRoomVideosInfo(): { [roomCode: string]: any[] } {
+    const result: { [roomCode: string]: any[] } = {};
+    for (const [roomCode, videos] of this.roomVideos.entries()) {
+      result[roomCode] = videos.map(v => ({
+        userId: v.userId,
+        videoS3Key: v.videoS3Key,
+        audioS3Key: v.audioS3Key,
+        gameTitle: v.metadata.gameTitle,
+        duration: v.metadata.duration
+      }));
+    }
+    return result;
   }
 
   /**

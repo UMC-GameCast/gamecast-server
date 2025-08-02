@@ -596,7 +596,7 @@ export class VideoController {
   };
 
   /**
-   * 하이라이트 추출 완료 콜백 (추출 서버에서 호출)
+   * 하이라이트 콜백 처리 완료 콜백 (추출 서버에서 호출)
    */
   public handleHighlightCallback = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -647,6 +647,38 @@ export class VideoController {
         error: {
           errorCode: 'CALLBACK_PROCESSING_FAILED',
           reason: error instanceof Error ? error.message : '콜백 처리 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 디버깅용: 메모리에 저장된 방별 영상 정보 조회
+   */
+  public getRoomVideosDebug = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const roomVideosInfo = this.videoService.getRoomVideosInfo();
+      
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '메모리에 저장된 방별 영상 정보',
+          data: roomVideosInfo,
+          totalRooms: Object.keys(roomVideosInfo).length
+        }
+      });
+
+    } catch (error) {
+      logger.error('방별 영상 정보 조회 실패', error);
+      
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'DEBUG_INFO_FAILED',
+          reason: '디버깅 정보 조회 중 오류가 발생했습니다.',
           data: null
         },
         success: null
