@@ -258,6 +258,6 @@ export class S3Service {
    * 하이라이트 영상용 S3 키 생성
    */
   public generateHighlightVideoKey(roomCode: string, fileName: string): string {
-    return this.generateS3Key(`highlight-videos/${roomCode}/raw`, fileName);
+    return this.generateS3Key(`highlight-videos/${roomCode}`, fileName);
   }
 }
