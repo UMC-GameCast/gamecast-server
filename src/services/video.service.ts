@@ -231,19 +231,37 @@ export class VideoService {
         });
       }
 
-      // 3. 로컬에도 임시 저장 (백업 및 즉시 스트리밍용)
-      const videoExtension = path.extname(data.videoFile.originalname);
-      const audioExtension = data.audioFile ? path.extname(data.audioFile.originalname) : null;
+      // 3. 로컬에도 임시 저장 (백업 및 즉시 스트리밍용) - S3 업로드 성공시 선택적으로 저장
+      let videoPath: string | undefined;
+      let audioPath: string | undefined;
       
-      const videoFileName = `${videoId}_video_${timestamp}${videoExtension}`;
-      const audioFileName = audioExtension ? `${videoId}_audio_${timestamp}${audioExtension}` : null;
-      
-      const videoPath = path.join(this.uploadDir, videoFileName);
-      const audioPath = audioFileName ? path.join(this.uploadDir, audioFileName) : undefined;
+      try {
+        const videoExtension = path.extname(data.videoFile.originalname);
+        const audioExtension = data.audioFile ? path.extname(data.audioFile.originalname) : null;
+        
+        const videoFileName = `${videoId}_video_${timestamp}${videoExtension}`;
+        const audioFileName = audioExtension ? `${videoId}_audio_${timestamp}${audioExtension}` : null;
+        
+        videoPath = path.join(this.uploadDir, videoFileName);
+        audioPath = audioFileName ? path.join(this.uploadDir, audioFileName) : undefined;
 
-      await fs.writeFile(videoPath, data.videoFile.buffer);
-      if (data.audioFile && audioPath) {
-        await fs.writeFile(audioPath, data.audioFile.buffer);
+        // uploads 디렉토리 권한 확인
+        await fs.access(this.uploadDir, fs.constants.W_OK);
+        
+        await fs.writeFile(videoPath, data.videoFile.buffer);
+        if (data.audioFile && audioPath) {
+          await fs.writeFile(audioPath, data.audioFile.buffer);
+        }
+        
+        logger.info('로컬 파일 저장 완료', { videoPath, audioPath });
+      } catch (localSaveError) {
+        logger.warn('로컬 파일 저장 실패 - S3 업로드는 성공했으므로 계속 진행', {
+          error: localSaveError instanceof Error ? localSaveError.message : String(localSaveError),
+          videoId
+        });
+        // 로컬 저장 실패시 S3 URL을 경로로 사용
+        videoPath = videoUploadResult.location;
+        audioPath = audioUploadResult?.location;
       }
 
       // 4. 우선 임시로 Session 테이블에 저장 (나중에 proper 테이블로 이동)

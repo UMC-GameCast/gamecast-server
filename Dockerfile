@@ -76,9 +76,10 @@ COPY --from=builder --chown=gamecast:nodejs /app/package*.json ./
 COPY --from=builder --chown=gamecast:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=gamecast:nodejs /app/tsconfig.json ./
 
-# Create necessary directories
-RUN mkdir -p /app/logs && chown gamecast:nodejs /app/logs
-RUN mkdir -p /app/uploads && chown gamecast:nodejs /app/uploads
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/logs && chown gamecast:nodejs /app/logs && chmod 755 /app/logs
+RUN mkdir -p /app/uploads && chown gamecast:nodejs /app/uploads && chmod 755 /app/uploads
+RUN mkdir -p /app/public && chown gamecast:nodejs /app/public && chmod 755 /app/public
 
 # Switch to non-root user
 USER gamecast
