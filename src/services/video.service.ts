@@ -190,11 +190,11 @@ export class VideoService {
       });
 
       // 1. S3에 원본 영상 업로드
-      const videoS3Key = this.s3Service.generateS3Key(
+      const videoS3Key = this.s3Service.generateOriginalVideoKey(
         data.metadata.roomCode,
         data.metadata.userId,
-        'original'
-      ) + '_video' + path.extname(data.videoFile.originalname);
+        data.videoFile.originalname
+      );
 
       const videoUploadResult = await this.s3Service.uploadBuffer(
         data.videoFile.buffer,
@@ -212,11 +212,11 @@ export class VideoService {
       let audioS3Key: string | undefined;
       let audioUploadResult: any = null;
       if (data.audioFile) {
-        audioS3Key = this.s3Service.generateS3Key(
+        audioS3Key = this.s3Service.generateOriginalAudioKey(
           data.metadata.roomCode,
           data.metadata.userId,
-          'original'
-        ) + '_audio' + path.extname(data.audioFile.originalname);
+          data.audioFile.originalname
+        );
 
         audioUploadResult = await this.s3Service.uploadBuffer(
           data.audioFile.buffer,
