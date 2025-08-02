@@ -236,7 +236,7 @@ export class S3Service {
     const uuid = uuidv4();
     
     // 버킷 접두사와 함께 키 생성
-    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/${userId}` : `${roomCode}/${userId}`;
+    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/raw/${userId}` : `${roomCode}/raw/${userId}`;
     
     return `${basePrefix}/video/${timestamp}_${uuid}_${fileName}`;
   }
@@ -249,7 +249,7 @@ export class S3Service {
     const uuid = uuidv4();
     
     // 버킷 접두사와 함께 키 생성
-    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/${userId}` : `${roomCode}/${userId}`;
+    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/raw/${userId}` : `${roomCode}/raw/${userId}`;
     
     return `${basePrefix}/audio/${timestamp}_${uuid}_${fileName}`;
   }
@@ -258,6 +258,6 @@ export class S3Service {
    * 하이라이트 영상용 S3 키 생성
    */
   public generateHighlightVideoKey(roomCode: string, fileName: string): string {
-    return this.generateS3Key(`highlight-videos/${roomCode}`, fileName);
+    return this.generateS3Key(`highlight-videos/${roomCode}/raw`, fileName);
   }
 }
