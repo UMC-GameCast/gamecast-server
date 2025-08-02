@@ -232,7 +232,26 @@ export class S3Service {
    * 원본 영상용 S3 키 생성
    */
   public generateOriginalVideoKey(roomCode: string, userId: string, fileName: string): string {
-    return this.generateS3Key(`original-videos/${roomCode}/${userId}`, fileName);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const uuid = uuidv4();
+    
+    // 버킷 접두사와 함께 키 생성
+    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/${userId}` : `${roomCode}/${userId}`;
+    
+    return `${basePrefix}/video/${timestamp}_${uuid}_${fileName}`;
+  }
+
+  /**
+   * 원본 오디오용 S3 키 생성
+   */
+  public generateOriginalAudioKey(roomCode: string, userId: string, fileName: string): string {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const uuid = uuidv4();
+    
+    // 버킷 접두사와 함께 키 생성
+    const basePrefix = this.bucketPrefix ? `${this.bucketPrefix}/${roomCode}/${userId}` : `${roomCode}/${userId}`;
+    
+    return `${basePrefix}/audio/${timestamp}_${uuid}_${fileName}`;
   }
 
   /**
