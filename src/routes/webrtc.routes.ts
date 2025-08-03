@@ -10,22 +10,7 @@ const router = Router();
  *     description: WebRTC 시그널링 및 실시간 통신 관련 API
  */
 
-/**
- * @swagger
- * /api/webrtc/test:
- *   get:
- *     tags: [WebRTC]
- *     summary: WebRTC 테스트 페이지
- *     description: WebRTC 기능을 테스트할 수 있는 HTML 페이지를 제공합니다
- *     responses:
- *       200:
- *         description: WebRTC 테스트 페이지
- *         content:
- *           text/html:
- *             schema:
- *               type: string
- *               example: "<!DOCTYPE html>..."
- */
+
 router.get('/test', (req: Request, res: Response) => {
   res.redirect('/webrtc-test');
 });

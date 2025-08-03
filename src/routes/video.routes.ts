@@ -804,4 +804,5 @@ router.get('/highlight/list/:roomCode', videoController.getHighlightVideos);
  */
 router.post('/highlight-callback/:roomCode', videoController.handleHighlightCallback);
 
+
 export default router;
