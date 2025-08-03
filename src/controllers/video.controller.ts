@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { VideoService } from '../services/video.service.js';
+import { HighlightCallbackData } from '../services/highlight-extraction.service.js';
 import logger from '../logger.js';
 
 // Multer 파일 타입 정의
@@ -601,27 +602,95 @@ export class VideoController {
   public handleHighlightCallback = async (req: Request, res: Response): Promise<void> => {
     try {
       const { roomCode } = req.params;
-      const callbackData = req.body;
+      const callbackData = req.body as HighlightCallbackData;
 
       logger.info('하이라이트 추출 완료 콜백 수신', {
         roomCode: roomCode,
-        jobId: callbackData.jobId,
-        status: callbackData.status
+        success: callbackData.success,
+        gameTitle: callbackData.game_title,
+        participantsCount: callbackData.participants_count,
+        totalHighlights: callbackData.summary?.total_highlights,
+        completedAt: callbackData.processing_completed_at
       });
 
-      // HighlightExtractionService를 통해 콜백 데이터 처리
-      const { HighlightExtractionService } = await import('../services/highlight-extraction.service.js');
-      const highlightService = new HighlightExtractionService();
-      
-      await highlightService.processHighlightResult(callbackData);
+      // 콜백 데이터 검증
+      if (!callbackData.room_code || callbackData.room_code !== roomCode) {
+        logger.warn('콜백 데이터의 룸 코드가 일치하지 않음', {
+          expectedRoomCode: roomCode,
+          receivedRoomCode: callbackData.room_code
+        });
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'INVALID_ROOM_CODE',
+            reason: '룸 코드가 일치하지 않습니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      // 성공/실패에 따른 처리
+      if (callbackData.success) {
+        logger.info('하이라이트 추출 성공', {
+          roomCode: roomCode,
+          gameTitle: callbackData.game_title,
+          highlights: callbackData.highlights?.length,
+          participants: callbackData.participants?.length,
+          totalDuration: callbackData.summary?.total_duration,
+          averageQuality: callbackData.summary?.average_quality
+        });
+
+        // 하이라이트 정보 로깅
+        if (callbackData.highlights && callbackData.highlights.length > 0) {
+          callbackData.highlights.forEach((highlight: any, index: number) => {
+            logger.info(`하이라이트 ${index + 1} 상세 정보`, {
+              highlightId: highlight.highlight_id,
+              name: highlight.highlight_name,
+              detectedBy: highlight.detected_by_user,
+              duration: highlight.timing.duration,
+              emotion: highlight.emotion_info.primary_emotion,
+              emotionConfidence: highlight.emotion_info.emotion_confidence,
+              qualityScore: highlight.quality_metrics.quality_score,
+              participantClips: highlight.participant_clips?.length
+            });
+          });
+        }
+
+        // 참여자 클립 정보 로깅
+        if (callbackData.participants && callbackData.participants.length > 0) {
+          callbackData.participants.forEach((participant: any, index: number) => {
+            logger.info(`참여자 ${index + 1} 클립 정보`, {
+              userId: participant.user_id,
+              hasAudio: !!participant.audio_s3_key,
+              hasVideo: !!participant.video_s3_key
+            });
+          });
+        }
+
+      } else {
+        logger.error('하이라이트 추출 실패', {
+          roomCode: roomCode,
+          gameTitle: callbackData.game_title,
+          completedAt: callbackData.processing_completed_at
+        });
+      }
+
+      // 콜백 데이터를 데이터베이스나 캐시에 저장 (추후 확장 가능)
+      // 현재는 로깅만 수행
 
       res.status(200).json({
         resultType: 'SUCCESS',
         error: null,
         success: {
           message: '콜백 처리가 완료되었습니다.',
-          jobId: callbackData.jobId,
-          roomCode: roomCode
+          roomCode: roomCode,
+          success: callbackData.success,
+          highlightsProcessed: callbackData.highlights?.length || 0,
+          participantsProcessed: callbackData.participants?.length || 0,
+          gameTitle: callbackData.game_title,
+          completedAt: callbackData.processing_completed_at
         }
       });
 
@@ -635,8 +704,10 @@ export class VideoController {
           roomCode: req.params.roomCode,
           callbackDataSize: JSON.stringify(req.body || {}).length,
           callbackKeys: Object.keys(req.body || {}),
-          jobId: req.body?.jobId,
-          status: req.body?.status
+          success: req.body?.success,
+          gameTitle: req.body?.game_title,
+          participantsCount: req.body?.participants_count,
+          totalHighlights: req.body?.summary?.total_highlights
         }
       };
 

@@ -182,12 +182,86 @@ app.use('/uploads', express.static('uploads')); // 업로드된 파일 서빙
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }),
     environment: process.env.NODE_ENV || 'development',
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     version: '1.0.0'
   });
+});
+
+// 로그 조회 엔드포인트
+app.get('/log', async (req, res) => {
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    
+    const logType = req.query.type as string || 'all';
+    const lines = parseInt(req.query.lines as string) || 100;
+    
+    let logFile = '';
+    if (logType === 'error') {
+      logFile = path.join(process.cwd(), 'logs', 'error.log');
+    } else {
+      logFile = path.join(process.cwd(), 'logs', 'all.log');
+    }
+
+    try {
+      const logContent = await fs.readFile(logFile, 'utf-8');
+      const logLines = logContent.split('\n').filter(line => line.trim() !== '');
+      const recentLines = logLines.slice(-lines);
+
+      res.json({
+        status: 'SUCCESS',
+        data: {
+          logType: logType,
+          totalLines: logLines.length,
+          returnedLines: recentLines.length,
+          requestedLines: lines,
+          logs: recentLines,
+          lastUpdate: new Date().toLocaleString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          })
+        }
+      });
+    } catch (fileError) {
+      res.json({
+        status: 'WARNING',
+        data: {
+          message: `로그 파일을 찾을 수 없습니다: ${logFile}`,
+          error: fileError instanceof Error ? fileError.message : String(fileError),
+          logs: []
+        }
+      });
+    }
+    
+  } catch (error) {
+    logger.error('로그 조회 실패:', error);
+    res.status(500).json({
+      status: 'FAIL',
+      error: {
+        errorCode: 'LOG_READ_FAILED',
+        reason: '로그 파일 읽기 중 오류가 발생했습니다.',
+        data: error instanceof Error ? error.message : String(error)
+      }
+    });
+  }
 });
 
 // Swagger 문서 설정

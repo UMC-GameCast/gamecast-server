@@ -1,5 +1,13 @@
 import winston from 'winston';
 import path from 'path';
+import fs from 'fs';
+
+// 로그 디렉토리 확인 및 생성
+const logDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+  console.log('로그 디렉토리 생성:', logDir);
+}
 
 // 로그 레벨 정의
 const levels = {
@@ -30,7 +38,20 @@ winston.addColors(colors);
 
 // 로그 포맷 정의
 const format = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
+  winston.format.timestamp({ 
+    format: () => {
+      return new Date().toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/\. /g, '-').replace(/\./g, '').replace(/ /g, ' ');
+    }
+  }),
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.colorize({ all: true }),

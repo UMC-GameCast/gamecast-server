@@ -38,6 +38,65 @@ export interface HighlightResult {
   processedAt: string;
 }
 
+// 새로운 콜백 데이터 타입 정의
+export interface HighlightCallbackData {
+  success: boolean;
+  room_code: string;
+  game_title: string;
+  participants_count: number;
+  processing_completed_at: string;
+  summary: {
+    total_highlights: number;
+    total_participant_clips: number;
+    total_duration: number;
+    average_quality: number;
+  };
+  participants: Array<{
+    user_id: string;
+    audio_s3_key: string;
+    video_s3_key: string;
+  }>;
+  highlights: Array<{
+    highlight_id: string;
+    highlight_number: number;
+    highlight_name: string;
+    detected_by_user: string;
+    timing: {
+      start_time: number;
+      end_time: number;
+      duration: number;
+    };
+    emotion_info: {
+      primary_emotion: string;
+      emotion_distribution: { [emotion: string]: number };
+      emotion_confidence: number;
+      emotion_intensity: number;
+    };
+    highlight_points: Array<{
+      point_id: string;
+      time: number;
+      timestamp: string;
+      relative_time: number;
+      emotion: string;
+      emotion_score: number;
+      intensity: number;
+      detected_by_user: string;
+    }>;
+    quality_metrics: {
+      quality_score: number;
+      highlight_count: number;
+      categories: string[];
+    };
+    participant_clips: Array<{
+      user_id: string;
+      s3_url: string;
+      s3_key: string;
+      filename: string;
+      is_main_detector: boolean;
+    }>;
+  }>;
+}
+
 export class HighlightExtractionService {
   private extractionServerUrl: string;
   private apiServerBaseUrl: string;
