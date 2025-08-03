@@ -34,6 +34,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env.dev
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -42,9 +44,11 @@ services:
       DB_USER: gamecast_user
       DB_PASSWORD: gamecast_password
       DB_NAME: gamecast
+      DATABASE_URL: "mysql://gamecast_user:gamecast_password@mysql:3306/gamecast"
       FRONTEND_URL: http://localhost:3000
       JWT_SECRET: your_super_secret_jwt_key_for_docker
       LOG_LEVEL: info
+      TZ: Asia/Seoul
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
