@@ -444,7 +444,7 @@ export class WebRTCService {
     this.handleLeaveRoom(socket);
   }
 
-  private handleLeaveRoom(socket: Socket) {
+  private async handleLeaveRoom(socket: Socket) {
     const roomCode = (socket as any).roomCode;
     const guestUserId = (socket as any).guestUserId;
     const nickname = (socket as any).nickname;
@@ -452,6 +452,48 @@ export class WebRTCService {
     if (roomCode && this.rooms.has(roomCode)) {
       const roomUsers = this.rooms.get(roomCode)!;
       roomUsers.delete(socket.id);
+
+      // 세션 참여자의 leftAt 시간 업데이트
+      if (guestUserId) {
+        try {
+          const room = await prisma.room.findUnique({
+            where: { roomCode },
+            include: {
+              voiceSessions: {
+                where: { endedAt: null },
+                take: 1
+              }
+            }
+          });
+
+          if (room && room.voiceSessions.length > 0) {
+            const voiceSession = room.voiceSessions[0];
+            
+            await prisma.sessionParticipant.updateMany({
+              where: {
+                sessionId: voiceSession.id,
+                guestUserId,
+                leftAt: null
+              },
+              data: {
+                leftAt: new Date()
+              }
+            });
+
+            // 음성 세션 참여자 수 감소
+            await prisma.voiceSession.update({
+              where: { id: voiceSession.id },
+              data: {
+                participantCount: {
+                  decrement: 1
+                }
+              }
+            });
+          }
+        } catch (error) {
+          logger.error('방 떠나기 시 세션 참여자 업데이트 실패:', error);
+        }
+      }
 
       // 방의 다른 사용자들에게 퇴장 알림
       socket.to(roomCode).emit('user-left', {
@@ -502,9 +544,19 @@ export class WebRTCService {
         });
       }
 
-      // 세션 참여자로 추가
-      await prisma.sessionParticipant.create({
-        data: {
+      // 세션 참여자로 추가 (중복 방지를 위해 upsert 사용)
+      await prisma.sessionParticipant.upsert({
+        where: {
+          sessionId_guestUserId: {
+            sessionId: voiceSession.id,
+            guestUserId
+          }
+        },
+        update: {
+          // 이미 존재하는 경우 leftAt을 null로 설정하여 다시 활성화
+          leftAt: null
+        },
+        create: {
           sessionId: voiceSession.id,
           guestUserId
         }
