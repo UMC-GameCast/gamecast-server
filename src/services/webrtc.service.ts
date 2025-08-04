@@ -39,6 +39,16 @@ interface PreparationStatusData {
   screenSetup: boolean;
 }
 
+interface CharacterStatusData {
+  selectedOptions: {
+    face: string;
+    hair: string;
+    top: string;
+    bottom: string;
+    accessory: string;
+  };
+}
+
 export class WebRTCService {
   private io: SocketIOServer;
   private rooms: Map<string, Map<string, RoomUser>> = new Map();
@@ -95,6 +105,11 @@ export class WebRTCService {
       // 준비 상태 업데이트
       socket.on('update-preparation-status', (data: PreparationStatusData) => {
         this.handlePreparationStatusUpdate(socket, data);
+      });
+
+      // 캐릭터 상태 업데이트
+      socket.on('update-character-status', (data: CharacterStatusData) => {
+        this.handleCharacterStatusUpdate(socket, data);
       });
 
       // 채팅 메시지
@@ -436,6 +451,43 @@ export class WebRTCService {
 
     } catch (error) {
       logger.error('준비 상태 업데이트 오류:', error);
+    }
+  }
+
+  private async handleCharacterStatusUpdate(socket: Socket, data: CharacterStatusData) {
+    try {
+      const { selectedOptions, selectedColors } = data;
+      const guestUserId = (socket as any).guestUserId;
+      const roomCode = (socket as any).roomCode;
+      const nickname = (socket as any).nickname;
+
+      if (!roomCode) {
+        logger.warn('방 코드가 없는 캐릭터 상태 업데이트 시도:', { socketId: socket.id });
+        return;
+      }
+
+      // 방의 모든 사용자에게 캐릭터 상태 변경 알림 (본인 포함)
+      this.io.to(roomCode).emit('character-status-updated', {
+        guestUserId,
+        nickname,
+        selectedOptions,
+        selectedColors,
+        updatedAt: new Date()
+      });
+
+      logger.info('캐릭터 상태 업데이트', {
+        guestUserId,
+        nickname,
+        roomCode,
+        selectedOptions,
+        selectedColors
+      });
+
+    } catch (error) {
+      logger.error('캐릭터 상태 업데이트 오류:', error);
+      socket.emit('error', { 
+        message: '캐릭터 상태 업데이트 중 오류가 발생했습니다.' 
+      });
     }
   }
 
