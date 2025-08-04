@@ -602,28 +602,32 @@ export class VideoController {
   public handleHighlightCallback = async (req: Request, res: Response): Promise<void> => {
     try {
       const { roomCode } = req.params;
-      const callbackData = req.body as HighlightCallbackData;
+      const callbackData = req.body;
 
-      logger.info('하이라이트 추출 완료 콜백 수신', {
+      // 수신된 콜백 데이터의 기본 정보 로깅
+      logger.info('하이라이트 추출 콜백 데이터 수신', {
         roomCode: roomCode,
-        success: callbackData.success,
-        gameTitle: callbackData.game_title,
-        participantsCount: callbackData.participants_count,
-        totalHighlights: callbackData.summary?.total_highlights,
-        completedAt: callbackData.processing_completed_at
+        requestMethod: req.method,
+        requestHeaders: req.headers,
+        bodySize: JSON.stringify(req.body || {}).length,
+        bodyKeys: Object.keys(req.body || {}),
+        rawBodyType: typeof req.body,
+        userAgent: req.headers['user-agent'],
+        contentType: req.headers['content-type']
       });
 
-      // 콜백 데이터 검증
-      if (!callbackData.room_code || callbackData.room_code !== roomCode) {
-        logger.warn('콜백 데이터의 룸 코드가 일치하지 않음', {
-          expectedRoomCode: roomCode,
-          receivedRoomCode: callbackData.room_code
+      // 요청 본문이 비어있거나 유효하지 않은 경우 처리
+      if (!callbackData || Object.keys(callbackData).length === 0) {
+        logger.error('콜백 데이터가 비어있음', {
+          roomCode: roomCode,
+          bodyContent: req.body,
+          bodyString: JSON.stringify(req.body)
         });
         res.status(400).json({
           resultType: 'FAIL',
           error: {
-            errorCode: 'INVALID_ROOM_CODE',
-            reason: '룸 코드가 일치하지 않습니다.',
+            errorCode: 'EMPTY_CALLBACK_DATA',
+            reason: '콜백 데이터가 비어있습니다.',
             data: null
           },
           success: null
@@ -631,36 +635,92 @@ export class VideoController {
         return;
       }
 
+      // 타입 캐스팅 전에 필수 필드 검증
+      const requiredFields = ['room_code', 'success'];
+      const missingFields = requiredFields.filter(field => !(field in callbackData));
+      
+      if (missingFields.length > 0) {
+        logger.error('콜백 데이터에 필수 필드 누락', {
+          roomCode: roomCode,
+          missingFields: missingFields,
+          receivedFields: Object.keys(callbackData),
+          callbackData: callbackData
+        });
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'MISSING_REQUIRED_FIELDS',
+            reason: `필수 필드가 누락되었습니다: ${missingFields.join(', ')}`,
+            data: { missingFields, receivedFields: Object.keys(callbackData) }
+          },
+          success: null
+        });
+        return;
+      }
+
+      // 안전한 타입 캐스팅
+      const typedCallbackData = callbackData as HighlightCallbackData;
+
+      logger.info('하이라이트 추출 완료 콜백 처리 시작', {
+        roomCode: roomCode,
+        success: typedCallbackData.success,
+        gameTitle: typedCallbackData.game_title,
+        participantsCount: typedCallbackData.participants_count,
+        totalHighlights: typedCallbackData.summary?.total_highlights,
+        completedAt: typedCallbackData.processing_completed_at
+      });
+
+      // 콜백 데이터 검증
+      if (!typedCallbackData.room_code || typedCallbackData.room_code !== roomCode) {
+        logger.warn('콜백 데이터의 룸 코드가 일치하지 않음', {
+          expectedRoomCode: roomCode,
+          receivedRoomCode: typedCallbackData.room_code
+        });
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'INVALID_ROOM_CODE',
+            reason: '룸 코드가 일치하지 않습니다.',
+            data: {
+              expected: roomCode,
+              received: typedCallbackData.room_code
+            }
+          },
+          success: null
+        });
+        return;
+      }
+
       // 성공/실패에 따른 처리
-      if (callbackData.success) {
+      if (typedCallbackData.success) {
         logger.info('하이라이트 추출 성공', {
           roomCode: roomCode,
-          gameTitle: callbackData.game_title,
-          highlights: callbackData.highlights?.length,
-          participants: callbackData.participants?.length,
-          totalDuration: callbackData.summary?.total_duration,
-          averageQuality: callbackData.summary?.average_quality
+          gameTitle: typedCallbackData.game_title,
+          highlights: typedCallbackData.highlights?.length,
+          participants: typedCallbackData.participants?.length,
+          totalDuration: typedCallbackData.summary?.total_duration,
+          averageQuality: typedCallbackData.summary?.average_quality
         });
 
         // 하이라이트 정보 로깅
-        if (callbackData.highlights && callbackData.highlights.length > 0) {
-          callbackData.highlights.forEach((highlight: any, index: number) => {
+        if (typedCallbackData.highlights && typedCallbackData.highlights.length > 0) {
+          typedCallbackData.highlights.forEach((highlight: any, index: number) => {
             logger.info(`하이라이트 ${index + 1} 상세 정보`, {
               highlightId: highlight.highlight_id,
               name: highlight.highlight_name,
               detectedBy: highlight.detected_by_user,
-              duration: highlight.timing.duration,
-              emotion: highlight.emotion_info.primary_emotion,
-              emotionConfidence: highlight.emotion_info.emotion_confidence,
-              qualityScore: highlight.quality_metrics.quality_score,
+              duration: highlight.timing?.duration,
+              emotion: highlight.emotion_info?.primary_emotion,
+              emotionConfidence: highlight.emotion_info?.emotion_confidence,
+              qualityScore: highlight.quality_metrics?.quality_score,
               participantClips: highlight.participant_clips?.length
             });
           });
         }
 
         // 참여자 클립 정보 로깅
-        if (callbackData.participants && callbackData.participants.length > 0) {
-          callbackData.participants.forEach((participant: any, index: number) => {
+        if (typedCallbackData.participants && typedCallbackData.participants.length > 0) {
+          typedCallbackData.participants.forEach((participant: any, index: number) => {
             logger.info(`참여자 ${index + 1} 클립 정보`, {
               userId: participant.user_id,
               hasAudio: !!participant.audio_s3_key,
@@ -672,13 +732,22 @@ export class VideoController {
       } else {
         logger.error('하이라이트 추출 실패', {
           roomCode: roomCode,
-          gameTitle: callbackData.game_title,
-          completedAt: callbackData.processing_completed_at
+          gameTitle: typedCallbackData.game_title,
+          completedAt: typedCallbackData.processing_completed_at
         });
       }
 
       // 콜백 데이터를 데이터베이스나 캐시에 저장 (추후 확장 가능)
       // 현재는 로깅만 수행
+
+      logger.info('콜백 처리 완료, 응답 전송', {
+        roomCode: roomCode,
+        success: typedCallbackData.success,
+        responseData: {
+          highlightsProcessed: typedCallbackData.highlights?.length || 0,
+          participantsProcessed: typedCallbackData.participants?.length || 0
+        }
+      });
 
       res.status(200).json({
         resultType: 'SUCCESS',
@@ -686,11 +755,11 @@ export class VideoController {
         success: {
           message: '콜백 처리가 완료되었습니다.',
           roomCode: roomCode,
-          success: callbackData.success,
-          highlightsProcessed: callbackData.highlights?.length || 0,
-          participantsProcessed: callbackData.participants?.length || 0,
-          gameTitle: callbackData.game_title,
-          completedAt: callbackData.processing_completed_at
+          success: typedCallbackData.success,
+          highlightsProcessed: typedCallbackData.highlights?.length || 0,
+          participantsProcessed: typedCallbackData.participants?.length || 0,
+          gameTitle: typedCallbackData.game_title,
+          completedAt: typedCallbackData.processing_completed_at
         }
       });
 
@@ -756,4 +825,5 @@ export class VideoController {
       });
     }
   };
+
 }
