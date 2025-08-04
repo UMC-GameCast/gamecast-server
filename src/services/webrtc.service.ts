@@ -47,6 +47,13 @@ interface CharacterStatusData {
     bottom: string;
     accessory: string;
   };
+  selectedColors: {
+    face: string;
+    hair: string;
+    top: string;
+    bottom: string;
+    accessory: string;
+  };
 }
 
 export class WebRTCService {
