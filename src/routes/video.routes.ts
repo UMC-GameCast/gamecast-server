@@ -804,5 +804,41 @@ router.get('/highlight/list/:roomCode', videoController.getHighlightVideos);
  */
 router.post('/highlight-callback/:roomCode', videoController.handleHighlightCallback);
 
+/**
+ * @swagger
+ * /api/videos/debug/room-videos:
+ *   get:
+ *     summary: 디버깅용 방별 영상 정보 조회
+ *     description: 메모리에 저장된 방별 영상 정보를 조회합니다. (개발용)
+ *     tags: [Videos]
+ *     responses:
+ *       200:
+ *         description: 방별 영상 정보 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "메모리에 저장된 방별 영상 정보"
+ *                     data:
+ *                       type: object
+ *                       description: 방 코드별 영상 정보
+ *                     totalRooms:
+ *                       type: number
+ *                       description: 총 방 개수
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/debug/room-videos', videoController.getRoomVideosDebug);
 
 export default router;

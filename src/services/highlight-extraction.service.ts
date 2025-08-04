@@ -3,18 +3,13 @@ import logger from '../logger.js';
 
 export interface VideoProcessingRequest {
   roomCode: string;
-  videos: {
+  gameTitle: string;
+  participants: {
     userId: string;
-    videoS3Key: string;
-    audioS3Key?: string;
-    metadata: {
-      gameTitle: string;
-      duration: number;
-      resolution: string;
-      fps: number;
-    };
+    audio_s3_key: string;
+    video_s3_key: string;
   }[];
-  callbackUrl: string; // API 서버의 콜백 엔드포인트
+  callbackUrl?: string; // API 서버의 콜백 엔드포인트 (선택사항)
 }
 
 export interface VideoProcessingResponse {
@@ -118,7 +113,7 @@ export class HighlightExtractionService {
     try {
       logger.info('하이라이트 추출 작업 시작 요청', {
         roomCode: request.roomCode,
-        videoCount: request.videos.length
+        participantCount: request.participants.length
       });
 
       const response = await axios.post(

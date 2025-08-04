@@ -641,11 +641,11 @@ export class VideoService {
       // 하이라이트 추출 요청 데이터 구성
       const extractionRequest: VideoProcessingRequest = {
         roomCode: roomCode,
-        videos: videos.map(video => ({
+        gameTitle: videos.length > 0 ? videos[0].metadata.gameTitle : 'Unknown Game',
+        participants: videos.map(video => ({
           userId: video.userId,
-          videoS3Key: video.videoS3Key,
-          audioS3Key: video.audioS3Key,
-          metadata: video.metadata
+          audio_s3_key: video.audioS3Key || '',
+          video_s3_key: video.videoS3Key
         })),
         callbackUrl: this.highlightService.generateCallbackUrl(roomCode)
       };
@@ -656,7 +656,7 @@ export class VideoService {
       logger.info('하이라이트 추출 요청 성공', {
         roomCode: roomCode,
         jobId: response.jobId,
-        videoCount: videos.length
+        participantCount: videos.length
       });
 
       return {
