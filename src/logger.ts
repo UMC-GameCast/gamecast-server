@@ -12,9 +12,15 @@ const levels = {
 
 // 환경에 따른 로그 레벨 설정
 const level = () => {
+  // 환경변수 LOG_LEVEL이 있으면 우선 사용
+  if (process.env.LOG_LEVEL) {
+    return process.env.LOG_LEVEL;
+  }
+  
+  // 환경변수가 없으면 기본값 사용
   const env = process.env.NODE_ENV || 'development';
   const isDevelopment = env === 'development';
-  return isDevelopment ? 'debug' : 'warn';
+  return isDevelopment ? 'debug' : 'info'; // 프로덕션에서도 info 로그 표시
 };
 
 // 로그 색상 정의
