@@ -122,7 +122,7 @@ export class HighlightExtractionService {
       });
 
       const response = await axios.post(
-        `${this.extractionServerUrl}/extract-multiplayer-highlights`,
+        `${this.extractionServerUrl}`,
         request,
         {
           headers: {
