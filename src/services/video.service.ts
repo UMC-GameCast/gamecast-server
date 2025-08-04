@@ -35,6 +35,7 @@ export interface VideoMetadata {
   tags: string[];
 }
 
+
 export interface VideoResult {
   videoId: string;
   videoPath: string;
@@ -716,54 +717,88 @@ export class VideoService {
    */
   public async getHighlightVideos(roomCode: string): Promise<any[]> {
     try {
-      const highlightRecords = await prisma.session.findMany({
+      // Room 테이블에서 roomCode로 roomId 조회
+      const room = await prisma.room.findUnique({
+        where: { roomCode: roomCode }
+      });
+
+      if (!room) {
+        logger.warn('Room not found for roomCode', { roomCode });
+        return [];
+      }
+
+      // RecordingSession 테이블에서 하이라이트 정보가 있는 방 조회
+      const recordingSessions = await prisma.recordingSession.findMany({
         where: {
-          data: {
-            contains: `"roomCode":"${roomCode}"`
-          }
+          roomId: room.id,
+          status: 'completed'
+        },
+        include: {
+          highlightAnalyses: {
+            include: {
+              highlightClips: true
+            }
+          },
+          mediaAssets: true
+        },
+        orderBy: {
+          endedAt: 'desc'
         }
       });
 
-      const highlights = highlightRecords
-        .map(record => {
-          try {
-            const data = JSON.parse(record.data || '{}');
-            if (data.type === 'highlight_video' && data.roomCode === roomCode) {
+      const highlights = recordingSessions
+        .map((session: any) => {
+          if (!session.highlightAnalyses || session.highlightAnalyses.length === 0) return null;
+          
+          // 각 하이라이트 분석에서 클립들을 가져와서 참가자별로 매핑
+          return session.highlightAnalyses.flatMap((analysis: any) => {
+            return analysis.highlightClips.map((clip: any) => {
+              // detectionFeatures에서 정보 추출
+              const features = clip.detectionFeatures || {};
+              
               return {
-                highlightId: record.id,
-                title: data.title,
-                duration: data.duration,
-                s3Key: data.s3Key,
-                thumbnailS3Key: data.thumbnailS3Key,
-                processedAt: data.processedAt,
-                downloadUrl: ''
+                highlightId: clip.id,
+                roomCode: roomCode,
+                gameTitle: session.recordingSettings?.gameTitle || 'League of Legends',
+                participantName: features.participantId || 'unknown',
+                videoStartTime: parseFloat(clip.startTimestamp.toString()),
+                videoEndTime: parseFloat(clip.endTimestamp.toString()),
+                description: features.description || clip.clipName || '',
+                videoUrl: features.s3Url || clip.mainSourceFilePath,
+                audioUrl: null, // 오디오는 별도 처리 필요시 추가
+                thumbnailUrl: null,
+                score: features.score || parseFloat(clip.confidenceScore?.toString() || '0'),
+                createdAt: session.startedAt,
+                tags: features.tags || [],
+                highlightNumber: features.highlightNumber,
+                emotion: features.emotion,
+                emotionIntensity: features.emotionIntensity,
+                detectedByUser: features.detectedByUser,
+                isMainDetector: features.isMainDetector,
+                filename: features.filename,
+                s3Key: features.s3Key,
+                totalClips: features.totalClips,
+                allClipUrls: features.allClipUrls,
+                s3FolderPath: features.s3FolderPath,
+                duration: parseFloat(clip.endTimestamp.toString()) - parseFloat(clip.startTimestamp.toString())
               };
-            }
-            return null;
-          } catch {
-            return null;
-          }
-        })
-        .filter((highlight): highlight is NonNullable<typeof highlight> => highlight !== null);
-
-      // S3 다운로드 URL 생성
-      for (const highlight of highlights) {
-        try {
-          const downloadUrl = await this.s3Service.getDownloadUrl(highlight.s3Key);
-          highlight.downloadUrl = downloadUrl.url;
-        } catch (error) {
-          logger.warn('하이라이트 영상 다운로드 URL 생성 실패', {
-            s3Key: highlight.s3Key,
-            error: error
+            });
           });
-        }
-      }
+        })
+        .flat()
+        .filter((highlight: any): highlight is NonNullable<typeof highlight> => highlight !== null);
+
+      logger.info('하이라이트 영상 목록 조회 결과', {
+        roomCode: roomCode,
+        foundHighlights: highlights.length
+      });
+
+      return highlights;
 
       logger.info('하이라이트 영상 목록 조회 완료', {
         roomCode: roomCode,
         highlightCount: highlights.length
       });
-
       return highlights;
 
     } catch (error) {

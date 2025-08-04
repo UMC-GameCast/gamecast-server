@@ -63,7 +63,7 @@ export interface HighlightCallbackData {
     };
     emotion_info: {
       primary_emotion: string;
-      emotion_distribution: { [emotion: string]: number };
+      emotion_distribution: Record<string, number>;
       emotion_confidence: number;
       emotion_intensity: number;
     };
@@ -81,6 +81,24 @@ export interface HighlightCallbackData {
       quality_score: number;
       highlight_count: number;
       categories: string[];
+    };
+    clip_files: {
+      total_clips: number;
+      successfully_created: number;
+      clips_by_participant: Record<string, {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+        is_main_detector: boolean;
+      }>;
+      all_clip_urls: string[];
+      s3_folder_path: string;
+      main_detector_clip: {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+        is_main_detector: boolean;
+      };
     };
     participant_clips: Array<{
       user_id: string;
