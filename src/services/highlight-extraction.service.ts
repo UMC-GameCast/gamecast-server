@@ -3,18 +3,13 @@ import logger from '../logger.js';
 
 export interface VideoProcessingRequest {
   roomCode: string;
-  videos: {
+  gameTitle: string;
+  participants: {
     userId: string;
-    videoS3Key: string;
-    audioS3Key?: string;
-    metadata: {
-      gameTitle: string;
-      duration: number;
-      resolution: string;
-      fps: number;
-    };
+    audio_s3_key: string;
+    video_s3_key: string;
   }[];
-  callbackUrl: string; // API 서버의 콜백 엔드포인트
+  callbackUrl?: string; // API 서버의 콜백 엔드포인트 (선택사항)
 }
 
 export interface VideoProcessingResponse {
@@ -68,7 +63,7 @@ export interface HighlightCallbackData {
     };
     emotion_info: {
       primary_emotion: string;
-      emotion_distribution: { [emotion: string]: number };
+      emotion_distribution: Record<string, number>;
       emotion_confidence: number;
       emotion_intensity: number;
     };
@@ -86,6 +81,24 @@ export interface HighlightCallbackData {
       quality_score: number;
       highlight_count: number;
       categories: string[];
+    };
+    clip_files: {
+      total_clips: number;
+      successfully_created: number;
+      clips_by_participant: Record<string, {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+        is_main_detector: boolean;
+      }>;
+      all_clip_urls: string[];
+      s3_folder_path: string;
+      main_detector_clip: {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+        is_main_detector: boolean;
+      };
     };
     participant_clips: Array<{
       user_id: string;
@@ -118,7 +131,7 @@ export class HighlightExtractionService {
     try {
       logger.info('하이라이트 추출 작업 시작 요청', {
         roomCode: request.roomCode,
-        videoCount: request.videos.length
+        participantCount: request.participants.length
       });
 
       const response = await axios.post(

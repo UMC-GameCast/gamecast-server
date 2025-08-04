@@ -737,8 +737,8 @@ export class VideoController {
         });
       }
 
-      // 콜백 데이터를 데이터베이스나 캐시에 저장 (추후 확장 가능)
-      // 현재는 로깅만 수행
+      // 콜백 데이터를 데이터베이스에 저장
+      await this.saveHighlightCallbackData(typedCallbackData);
 
       logger.info('콜백 처리 완료, 응답 전송', {
         roomCode: roomCode,
@@ -793,6 +793,132 @@ export class VideoController {
       });
     }
   };
+
+  /**
+   * 하이라이트 콜백 데이터를 데이터베이스에 저장
+   */
+  private async saveHighlightCallbackData(callbackData: HighlightCallbackData): Promise<void> {
+    try {
+      const { prisma } = await import('../db.config.js');
+
+      // 1. 룸 정보 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode: callbackData.room_code }
+      });
+
+      if (!room) {
+        logger.warn('콜백에서 룸을 찾을 수 없음', { roomCode: callbackData.room_code });
+        return;
+      }
+
+      // 2. 녹화 세션 생성 또는 업데이트
+      let recordingSession = await prisma.recordingSession.findFirst({
+        where: {
+          roomId: room.id,
+          status: 'recording'
+        }
+      });
+
+      if (!recordingSession) {
+        recordingSession = await prisma.recordingSession.create({
+          data: {
+            roomId: room.id,
+            sessionName: `${callbackData.game_title} - ${callbackData.room_code}`,
+            status: callbackData.success ? 'completed' : 'failed',
+            endedAt: new Date(callbackData.processing_completed_at),
+            recordingSettings: {
+              gameTitle: callbackData.game_title,
+              participantsCount: callbackData.participants_count,
+              callbackReceived: true
+            }
+          }
+        });
+      } else {
+        // 기존 세션 업데이트
+        recordingSession = await prisma.recordingSession.update({
+          where: { id: recordingSession.id },
+          data: {
+            status: callbackData.success ? 'completed' : 'failed',
+            endedAt: new Date(callbackData.processing_completed_at)
+          }
+        });
+      }
+
+      // 3. 성공한 경우 하이라이트 분석 및 클립 저장
+      if (callbackData.success && callbackData.highlights && callbackData.highlights.length > 0) {
+        // 하이라이트 분석 레코드 생성
+        const highlightAnalysis = await prisma.highlightAnalysis.create({
+          data: {
+            recordingSessionId: recordingSession.id,
+            analysisAlgorithm: 'external_highlight_extraction',
+            analysisParameters: {
+              summary: callbackData.summary,
+              participantsCount: callbackData.participants_count
+            },
+            status: 'completed',
+            completedAt: new Date(callbackData.processing_completed_at)
+          }
+        });
+
+        // 각 하이라이트 클립 저장
+        for (const highlight of callbackData.highlights) {
+          // 각 하이라이트의 참가자별 클립 저장
+          for (const participantClip of highlight.participant_clips) {
+            await prisma.highlightClip.create({
+              data: {
+                analysisId: highlightAnalysis.id,
+                clipName: highlight.highlight_name || `하이라이트 ${highlight.highlight_number}`,
+                startTimestamp: highlight.timing.start_time,
+                endTimestamp: highlight.timing.end_time,
+                confidenceScore: highlight.emotion_info.emotion_confidence,
+                highlightType: 'voice_spike',
+                mainSourceFilePath: participantClip.s3_url,
+                detectionFeatures: {
+                  highlightId: highlight.highlight_id,
+                  highlightNumber: highlight.highlight_number,
+                  participantId: participantClip.user_id,
+                  s3Url: participantClip.s3_url,
+                  s3Key: participantClip.s3_key,
+                  filename: participantClip.filename,
+                  description: highlight.highlight_name,
+                  score: highlight.quality_metrics.quality_score,
+                  emotion: highlight.emotion_info.primary_emotion,
+                  emotionConfidence: highlight.emotion_info.emotion_confidence,
+                  emotionIntensity: highlight.emotion_info.emotion_intensity,
+                  isMainDetector: participantClip.is_main_detector,
+                  detectedByUser: highlight.detected_by_user,
+                  tags: highlight.quality_metrics.categories || [],
+                  // 새로운 clip_files 정보 추가
+                  totalClips: highlight.clip_files.total_clips,
+                  successfullyCreated: highlight.clip_files.successfully_created,
+                  allClipUrls: highlight.clip_files.all_clip_urls,
+                  s3FolderPath: highlight.clip_files.s3_folder_path,
+                  mainDetectorClip: highlight.clip_files.main_detector_clip,
+                  clipsbyParticipant: highlight.clip_files.clips_by_participant,
+                  highlightPoints: highlight.highlight_points
+                },
+                isSelected: true
+              }
+            });
+          }
+        }
+
+        logger.info('하이라이트 콜백 데이터 저장 완료', {
+          roomCode: callbackData.room_code,
+          recordingSessionId: recordingSession.id,
+          analysisId: highlightAnalysis.id,
+          highlightsCount: callbackData.highlights.length
+        });
+      }
+
+    } catch (error) {
+      logger.error('하이라이트 콜백 데이터 저장 실패', {
+        roomCode: callbackData.room_code,
+        error: error
+      });
+      // 저장 실패해도 응답은 성공으로 처리 (콜백 자체는 정상 처리됨)
+    }
+  }
 
   /**
    * 디버깅용: 메모리에 저장된 방별 영상 정보 조회
