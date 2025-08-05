@@ -119,6 +119,11 @@ export class WebRTCService {
         this.handlePreparationStatusUpdate(socket, data);
       });
 
+      // 최종 준비 완료 (레디 버튼)
+      socket.on('ready-to-start', () => {
+        this.handleReadyToStart(socket);
+      });
+
       // 캐릭터 상태 업데이트
       socket.on('update-character-status', (data: CharacterStatusData) => {
         this.handleCharacterStatusUpdate(socket, data);
@@ -359,36 +364,58 @@ export class WebRTCService {
         return;
       }
 
-      // 방 상태를 'recording'으로 변경
-      await prisma.room.update({
+      // 방장 권한 확인
+      const room = await prisma.room.findFirst({
         where: { roomCode },
-        data: { roomState: RoomState.recording }
-      });
-
-      // 녹화 세션 생성
-      const recordingSession = await prisma.recordingSession.create({
-        data: {
-          roomId,
-          initiatorGuestId: guestUserId,
-          sessionName: `${roomCode} 녹화 세션`,
-          recordingSettings: {
-            quality: '1080p',
-            format: 'webm'
-          },
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24시간 후
+        include: { 
+          hostGuest: true,
+          participants: {
+            where: { isActive: true }
+          }
         }
       });
 
-      // 방의 모든 사용자에게 녹화 시작 알림
-      this.io.to(roomCode).emit('recording-started', {
-        sessionId: recordingSession.id,
-        startedBy: (socket as any).nickname,
-        timestamp: new Date()
+      if (!room) {
+        socket.emit('recording-error', { message: '방을 찾을 수 없습니다.' });
+        return;
+      }
+
+      // 방장인지 확인
+      if (room.hostGuest?.id !== guestUserId) {
+        socket.emit('recording-error', { 
+          message: '녹화 시작은 방장만 할 수 있습니다.',
+          code: 'INSUFFICIENT_PERMISSION'
+        });
+        return;
+      }
+
+      // 모든 참여자가 준비 완료되었는지 재확인
+      const allReady = room.participants.every(participant => {
+        const status = participant.preparationStatus as any;
+        return status && 
+               status.characterSetup && 
+               (typeof status.characterSetup === 'object' ? 
+                 status.characterSetup.selectedOptions && 
+                 status.characterSetup.selectedColors : 
+                 status.characterSetup === true) &&
+               status.screenSetup === true &&
+               status.finalReady === true;
       });
 
-      logger.info(`방 ${roomCode}에서 녹화가 시작되었습니다.`, {
-        sessionId: recordingSession.id,
-        initiator: guestUserId
+      if (!allReady) {
+        socket.emit('recording-error', { 
+          message: '아직 준비되지 않은 참여자가 있습니다.',
+          code: 'PARTICIPANTS_NOT_READY'
+        });
+        return;
+      }
+
+      // 카운트다운 시작
+      await this.startCountdownAndRecording(roomCode, room.id);
+
+      logger.info(`방장이 녹화를 시작합니다: ${roomCode}`, {
+        hostId: guestUserId,
+        participantCount: room.participants.length
       });
 
     } catch (error) {
@@ -501,9 +528,7 @@ export class WebRTCService {
         screenSetup
       });
 
-      // 1. 전체 준비 상태 체크
-      await this.checkAndStartRecordingIfReady(roomCode);
-
+      // 준비 상태 업데이트만 수행 (자동 녹화 시작 제거)
       logger.info('준비 상태 업데이트', {
         guestUserId,
         characterSetup,
@@ -556,9 +581,7 @@ export class WebRTCService {
         updatedAt: new Date()
       });
 
-      // 1. 전체 준비 상태 체크 (캐릭터 변경도 준비 상태에 영향)
-      await this.checkAndStartRecordingIfReady(roomCode);
-
+      // 캐릭터 상태 업데이트만 수행 (자동 녹화 시작 제거)
       logger.info('캐릭터 상태 업데이트', {
         guestUserId,
         nickname,
@@ -571,6 +594,58 @@ export class WebRTCService {
       logger.error('캐릭터 상태 업데이트 오류:', error);
       socket.emit('error', { 
         message: '캐릭터 상태 업데이트 중 오류가 발생했습니다.' 
+      });
+    }
+  }
+
+  private async handleReadyToStart(socket: Socket) {
+    try {
+      const guestUserId = (socket as any).guestUserId;
+      const roomCode = (socket as any).roomCode;
+      const nickname = (socket as any).nickname;
+
+      if (!roomCode || !guestUserId) {
+        logger.warn('방 코드 또는 사용자 ID가 없는 준비 완료 시도:', { socketId: socket.id });
+        socket.emit('error', { message: '방 정보를 찾을 수 없습니다.' });
+        return;
+      }
+
+      // DB에 최종 준비 상태 저장
+      await prisma.roomParticipant.updateMany({
+        where: {
+          guestUserId,
+          isActive: true
+        },
+        data: {
+          preparationStatus: {
+            characterSetup: true,
+            screenSetup: true,
+            finalReady: true // 최종 준비 완료 플래그 추가
+          }
+        }
+      });
+
+      // 방의 모든 사용자에게 준비 완료 알림
+      this.io.to(roomCode).emit('user-ready', {
+        guestUserId,
+        nickname,
+        isReady: true,
+        timestamp: new Date()
+      });
+
+      // 모든 참여자의 준비 상태 체크 후 방장에게 알림
+      await this.checkAllReadyAndNotifyHost(roomCode);
+
+      logger.info('사용자 최종 준비 완료', {
+        guestUserId,
+        nickname,
+        roomCode
+      });
+
+    } catch (error) {
+      logger.error('준비 완료 처리 오류:', error);
+      socket.emit('error', { 
+        message: '준비 완료 처리 중 오류가 발생했습니다.' 
       });
     }
   }
@@ -916,6 +991,95 @@ export class WebRTCService {
   }
 
   /**
+   * 모든 참여자 준비 상태 체크 및 방장에게 알림
+   */
+  private async checkAllReadyAndNotifyHost(roomCode: string) {
+    try {
+      // 방 정보 조회
+      const room = await prisma.room.findFirst({
+        where: {
+          roomCode,
+          roomState: {
+            in: [RoomState.waiting, RoomState.active]
+          }
+        },
+        include: {
+          participants: {
+            where: { isActive: true },
+            include: { guestUser: true }
+          },
+          hostGuest: {
+            select: { id: true }
+          }
+        }
+      });
+
+      if (!room || room.participants.length < 2) {
+        logger.info('준비 체크 조건 미충족: 참여자 부족', { 
+          roomCode, 
+          participantCount: room?.participants.length || 0 
+        });
+        return;
+      }
+
+      // 모든 참여자의 준비 상태 확인 (최종 준비 완료 포함)
+      const allReady = room.participants.every(participant => {
+        const status = participant.preparationStatus as any;
+        return status && 
+               status.characterSetup && 
+               (typeof status.characterSetup === 'object' ? 
+                 status.characterSetup.selectedOptions && 
+                 status.characterSetup.selectedColors : 
+                 status.characterSetup === true) &&
+               status.screenSetup === true &&
+               status.finalReady === true; // 최종 준비 완료 플래그 체크
+      });
+
+      // 준비 완료된 참여자 수 계산
+      const readyCount = room.participants.filter(participant => {
+        const status = participant.preparationStatus as any;
+        return status && 
+               status.characterSetup && 
+               status.screenSetup === true &&
+               status.finalReady === true;
+      }).length;
+
+      if (allReady) {
+        // 모든 참여자가 준비 완료 - 방장에게 녹화 시작 가능 알림
+        this.io.to(roomCode).emit('all-users-ready', {
+          message: '모든 참여자가 준비 완료되었습니다. 녹화를 시작할 수 있습니다.',
+          readyCount,
+          totalCount: room.participants.length,
+          canStartRecording: true,
+          timestamp: new Date()
+        });
+
+        logger.info('모든 참여자 준비 완료 - 방장 알림 전송', { 
+          roomCode, 
+          participantCount: room.participants.length 
+        });
+      } else {
+        // 아직 준비되지 않은 참여자 존재 - 상태 업데이트 알림
+        this.io.to(roomCode).emit('ready-status-update', {
+          readyCount,
+          totalCount: room.participants.length,
+          canStartRecording: false,
+          timestamp: new Date()
+        });
+
+        logger.info('준비 상태 업데이트', { 
+          roomCode,
+          readyCount,
+          totalCount: room.participants.length
+        });
+      }
+
+    } catch (error) {
+      logger.error('준비 상태 체크 오류:', error);
+    }
+  }
+
+  /**
    * 전체 준비 상태 체크 및 자동 녹화 시작
    */
   private async checkAndStartRecordingIfReady(roomCode: string) {
@@ -941,7 +1105,7 @@ export class WebRTCService {
         return;
       }
 
-      // 모든 참여자의 준비 상태 확인
+      // 모든 참여자의 준비 상태 확인 (최종 준비 완료 포함)
       const allReady = room.participants.every(participant => {
         const status = participant.preparationStatus as any;
         return status && 
@@ -950,7 +1114,8 @@ export class WebRTCService {
                  status.characterSetup.selectedOptions && 
                  status.characterSetup.selectedColors : 
                  status.characterSetup === true) &&
-               status.screenSetup === true;
+               status.screenSetup === true &&
+               status.finalReady === true; // 최종 준비 완료 플래그 체크
       });
 
       if (allReady) {
