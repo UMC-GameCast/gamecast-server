@@ -382,6 +382,27 @@ export class WebRTCService {
     try {
       const { roomCode } = data;
       const roomId = (socket as any).roomId;
+      const guestUserId = (socket as any).guestUserId;
+
+      // 3. 방장 권한 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode },
+        include: { hostGuest: true }
+      });
+
+      if (!room) {
+        socket.emit('recording-error', { message: '방을 찾을 수 없습니다.' });
+        return;
+      }
+
+      // 방장인지 확인
+      if (room.hostGuest?.id !== guestUserId) {
+        socket.emit('recording-error', { 
+          message: '녹화 중단은 방장만 할 수 있습니다.',
+          code: 'INSUFFICIENT_PERMISSION'
+        });
+        return;
+      }
 
       // 가장 최근 녹화 세션 종료
       const recordingSession = await prisma.recordingSession.findFirst({
@@ -394,15 +415,18 @@ export class WebRTCService {
         }
       });
 
-      if (recordingSession) {
-        await prisma.recordingSession.update({
-          where: { id: recordingSession.id },
-          data: {
-            endedAt: new Date(),
-            status: 'processing'
-          }
-        });
+      if (!recordingSession) {
+        socket.emit('recording-error', { message: '진행 중인 녹화를 찾을 수 없습니다.' });
+        return;
       }
+
+      await prisma.recordingSession.update({
+        where: { id: recordingSession.id },
+        data: {
+          endedAt: new Date(),
+          status: 'processing'
+        }
+      });
 
       // 방 상태를 'processing'으로 변경
       await prisma.room.update({
@@ -412,13 +436,16 @@ export class WebRTCService {
 
       // 방의 모든 사용자에게 녹화 종료 알림
       this.io.to(roomCode).emit('recording-stopped', {
-        sessionId: recordingSession?.id,
+        sessionId: recordingSession.id,
         stoppedBy: (socket as any).nickname,
+        stoppedByHost: true,
         timestamp: new Date()
       });
 
-      logger.info(`방 ${roomCode}에서 녹화가 종료되었습니다.`, {
-        sessionId: recordingSession?.id
+      logger.info(`방장이 녹화를 중단했습니다: ${roomCode}`, {
+        sessionId: recordingSession.id,
+        hostId: guestUserId,
+        hostNickname: (socket as any).nickname
       });
 
     } catch (error) {
@@ -454,6 +481,9 @@ export class WebRTCService {
         characterSetup,
         screenSetup
       });
+
+      // 1. 전체 준비 상태 체크
+      await this.checkAndStartRecordingIfReady(roomCode);
 
       logger.info('준비 상태 업데이트', {
         guestUserId,
@@ -501,6 +531,9 @@ export class WebRTCService {
         selectedColors,
         updatedAt: new Date()
       });
+
+      // 1. 전체 준비 상태 체크 (캐릭터 변경도 준비 상태에 영향)
+      await this.checkAndStartRecordingIfReady(roomCode);
 
       logger.info('캐릭터 상태 업데이트', {
         guestUserId,
@@ -715,6 +748,165 @@ export class WebRTCService {
 
     } catch (error) {
       logger.error('참여자 업데이트 이벤트 전송 오류:', error);
+    }
+  }
+
+  /**
+   * 전체 준비 상태 체크 및 자동 녹화 시작
+   */
+  private async checkAndStartRecordingIfReady(roomCode: string) {
+    try {
+      // 방 정보 조회
+      const room = await prisma.room.findFirst({
+        where: {
+          roomCode,
+          roomState: {
+            in: [RoomState.waiting, RoomState.active]
+          }
+        },
+        include: {
+          participants: {
+            where: { isActive: true },
+            include: { guestUser: true }
+          }
+        }
+      });
+
+      if (!room || room.participants.length < 2) {
+        logger.info('녹화 시작 조건 미충족: 참여자 부족', { roomCode, participantCount: room?.participants.length || 0 });
+        return;
+      }
+
+      // 모든 참여자의 준비 상태 확인
+      const allReady = room.participants.every(participant => {
+        const status = participant.preparationStatus as any;
+        return status && 
+               status.characterSetup && 
+               (typeof status.characterSetup === 'object' ? 
+                 status.characterSetup.selectedOptions && 
+                 status.characterSetup.selectedColors : 
+                 status.characterSetup === true) &&
+               status.screenSetup === true;
+      });
+
+      if (allReady) {
+        logger.info('모든 참여자 준비 완료 - 자동 녹화 시작', { 
+          roomCode, 
+          participantCount: room.participants.length 
+        });
+
+        // 카운트다운 시작
+        await this.startCountdownAndRecording(roomCode, room.id);
+      } else {
+        logger.info('아직 준비되지 않은 참여자 존재', { 
+          roomCode,
+          readyCount: room.participants.filter(p => {
+            const status = p.preparationStatus as any;
+            return status && status.characterSetup && status.screenSetup;
+          }).length,
+          totalCount: room.participants.length
+        });
+      }
+
+    } catch (error) {
+      logger.error('준비 상태 체크 오류:', error);
+    }
+  }
+
+  /**
+   * 카운트다운 후 녹화 시작
+   */
+  private async startCountdownAndRecording(roomCode: string, roomId: string) {
+    try {
+      // 이미 녹화 중이거나 처리 중인 경우 방지
+      const currentRoom = await prisma.room.findFirst({
+        where: { roomCode }
+      });
+
+      if (!currentRoom || currentRoom.roomState !== RoomState.waiting && currentRoom.roomState !== RoomState.active) {
+        logger.warn('녹화 시작 불가: 방 상태 부적절', { roomCode, roomState: currentRoom?.roomState });
+        return;
+      }
+
+      // 방 상태를 'active'로 변경 (카운트다운 시작)
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.active }
+      });
+
+      // 카운트다운 시작 알림
+      this.io.to(roomCode).emit('recording-countdown-started', {
+        countdown: 3,
+        message: '모든 참여자가 준비되었습니다! 녹화가 곧 시작됩니다.',
+        timestamp: new Date()
+      });
+
+      // 3초 카운트다운
+      for (let i = 3; i > 0; i--) {
+        this.io.to(roomCode).emit('recording-countdown', {
+          count: i,
+          timestamp: new Date()
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // 녹화 시작
+      await this.autoStartRecording(roomCode, roomId);
+
+    } catch (error) {
+      logger.error('카운트다운 및 녹화 시작 오류:', error);
+    }
+  }
+
+  /**
+   * 자동 녹화 시작
+   */
+  private async autoStartRecording(roomCode: string, roomId: string) {
+    try {
+      // 방 상태를 'recording'으로 변경
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.recording }
+      });
+
+      // 녹화 세션 생성
+      const recordingSession = await prisma.recordingSession.create({
+        data: {
+          roomId,
+          sessionName: `${roomCode} 자동 녹화 세션`,
+          recordingSettings: {
+            quality: '1080p',
+            format: 'webm',
+            autoStarted: true
+          },
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24시간 후
+        }
+      });
+
+      // 방의 모든 사용자에게 녹화 시작 알림
+      this.io.to(roomCode).emit('recording-started', {
+        sessionId: recordingSession.id,
+        startedBy: 'SYSTEM',
+        autoStarted: true,
+        timestamp: new Date()
+      });
+
+      logger.info(`자동 녹화 시작: ${roomCode}`, {
+        sessionId: recordingSession.id,
+        roomId
+      });
+
+    } catch (error) {
+      logger.error('자동 녹화 시작 오류:', error);
+      
+      // 오류 발생 시 방 상태 복구
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.active }
+      }).catch(rollbackError => {
+        logger.error('방 상태 복구 실패:', rollbackError);
+      });
     }
   }
 
