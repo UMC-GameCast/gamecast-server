@@ -809,4 +809,324 @@ export class VideoService {
       throw error;
     }
   }
+
+  /**
+   * 방의 하이라이트 클립 목록 조회 (새로운 구조)
+   */
+  async getHighlightClipsByRoom(roomCode: string): Promise<{
+    roomCode: string;
+    totalClips: number;
+    highlights: Array<{
+      highlightId: string;
+      clipName: string;
+      highlightNumber: number;
+      startTime: number;
+      endTime: number;
+      duration: number;
+      emotion: string;
+      emotionConfidence: number;
+      qualityScore: number;
+      downloadReady: boolean;
+      downloadUrl?: string;
+      downloadExpiresAt?: string;
+      participantClips: Array<{
+        guestUserId: string;
+        filename: string;
+        s3Url: string;
+        s3Key: string;
+        isMainDetector: boolean;
+      }>;
+      createdAt: string;
+    }>;
+  }> {
+    try {
+      logger.info('방의 하이라이트 클립 목록 조회 시작', { roomCode });
+
+      // 방 정보 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode },
+        include: {
+          recordingSessions: {
+            where: { status: 'completed' },
+            include: {
+              highlightAnalyses: {
+                where: { status: 'completed' },
+                include: {
+                  highlightClips: {
+                    where: { isSelected: true },
+                    orderBy: { createdAt: 'desc' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!room) {
+        throw new Error('방을 찾을 수 없습니다.');
+      }
+
+      const highlights: any[] = [];
+
+      for (const session of room.recordingSessions) {
+        for (const analysis of session.highlightAnalyses) {
+          for (const clip of analysis.highlightClips) {
+            const features = clip.detectionFeatures as any || {};
+            
+            highlights.push({
+              highlightId: clip.id,
+              clipName: clip.clipName || `하이라이트 ${features.highlightNumber || 1}`,
+              highlightNumber: features.highlightNumber || 1,
+              startTime: Number(clip.startTimestamp),
+              endTime: Number(clip.endTimestamp),
+              duration: Number(clip.endTimestamp) - Number(clip.startTimestamp),
+              emotion: features.emotion || 'unknown',
+              emotionConfidence: Number(clip.confidenceScore || 0),
+              qualityScore: features.score || 0,
+              downloadReady: true,
+              participantClips: this.extractParticipantClips(features),
+              createdAt: clip.createdAt.toISOString()
+            });
+          }
+        }
+      }
+
+      const result = {
+        roomCode,
+        totalClips: highlights.length,
+        highlights: highlights.sort((a, b) => b.highlightNumber - a.highlightNumber)
+      };
+
+      logger.info('하이라이트 클립 목록 조회 완료', {
+        roomCode,
+        totalClips: result.totalClips
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('하이라이트 클립 목록 조회 실패', {
+        roomCode,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 하이라이트 클립 다운로드 링크 생성
+   */
+  async generateClipDownloadLink(clipId: string, expiresIn: number = 3600): Promise<{
+    clipId: string;
+    downloadUrl: string;
+    expiresAt: string;
+    filename: string;
+    s3Key?: string;
+  }> {
+    try {
+      logger.info('하이라이트 클립 다운로드 링크 생성 시작', { clipId, expiresIn });
+
+      // 클립 정보 조회
+      const clip = await prisma.highlightClip.findUnique({
+        where: { id: clipId },
+        include: {
+          analysis: {
+            include: {
+              recordingSession: {
+                include: {
+                  room: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!clip) {
+        throw new Error('클립을 찾을 수 없습니다.');
+      }
+
+      const features = clip.detectionFeatures as any || {};
+      const s3Url = features.s3Url || clip.mainSourceFilePath;
+      const filename = features.filename || `highlight_${clip.id}.mp4`;
+      const s3Key = features.s3Key;
+
+      if (!s3Url) {
+        throw new Error('클립 파일 정보를 찾을 수 없습니다.');
+      }
+
+      // S3 Pre-signed URL 생성
+      const s3Service = new S3Service();
+      let downloadUrl: string;
+
+      if (s3Key) {
+        // S3 키가 있는 경우 pre-signed URL 생성 (임시로 직접 URL 사용)
+        downloadUrl = s3Url; // 실제로는 s3Service.getPresignedUrl(s3Key, expiresIn) 사용
+      } else {
+        // 직접 URL인 경우 그대로 사용
+        downloadUrl = s3Url;
+      }
+
+      const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+      const result = {
+        clipId,
+        downloadUrl,
+        expiresAt,
+        filename,
+        s3Key
+      };
+
+      logger.info('하이라이트 클립 다운로드 링크 생성 완료', {
+        clipId,
+        filename,
+        expiresAt
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('하이라이트 클립 다운로드 링크 생성 실패', {
+        clipId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 사용자별 하이라이트 클립 조회
+   */
+  async getUserHighlightClips(guestUserId: string, page: number = 1, limit: number = 10): Promise<{
+    guestUserId: string;
+    totalClips: number;
+    totalPages: number;
+    currentPage: number;
+    highlights: Array<{
+      highlightId: string;
+      clipName: string;
+      roomCode: string;
+      gameTitle: string;
+      startTime: number;
+      endTime: number;
+      duration: number;
+      emotion: string;
+      emotionConfidence: number;
+      qualityScore: number;
+      isMainDetector: boolean;
+      downloadReady: boolean;
+      createdAt: string;
+    }>;
+  }> {
+    try {
+      logger.info('사용자별 하이라이트 클립 조회 시작', { guestUserId, page, limit });
+
+      const skip = (page - 1) * limit;
+
+      // 사용자가 참여한 하이라이트 클립 조회 (JSON 필드 검색 수정)
+      const clips = await prisma.$queryRaw`
+        SELECT hc.*, ha.*, rs.*, r.*
+        FROM highlight_clips hc
+        JOIN highlight_analysis ha ON hc.analysis_id = ha.id
+        JOIN recording_sessions rs ON ha.recording_session_id = rs.id
+        JOIN rooms r ON rs.room_id = r.id
+        WHERE JSON_EXTRACT(hc.detection_features, '$.guestUserId') = ${guestUserId}
+        AND hc.is_selected = 1
+        ORDER BY hc.created_at DESC
+        LIMIT ${limit} OFFSET ${skip}
+      ` as any[];
+
+      const totalCount = await prisma.$queryRaw`
+        SELECT COUNT(*) as count
+        FROM highlight_clips hc
+        WHERE JSON_EXTRACT(hc.detection_features, '$.guestUserId') = ${guestUserId}
+        AND hc.is_selected = 1
+      ` as any[];
+
+      const highlights = clips.map(clip => {
+        const features = JSON.parse(clip.detection_features || '{}');
+
+        return {
+          highlightId: clip.id,
+          clipName: clip.clip_name || `하이라이트 ${features.highlightNumber || 1}`,
+          roomCode: clip.room_code,
+          gameTitle: JSON.parse(clip.recording_settings || '{}').gameTitle || 'Unknown Game',
+          startTime: Number(clip.start_timestamp),
+          endTime: Number(clip.end_timestamp),
+          duration: Number(clip.end_timestamp) - Number(clip.start_timestamp),
+          emotion: features.emotion || 'unknown',
+          emotionConfidence: Number(clip.confidence_score || 0),
+          qualityScore: features.score || 0,
+          isMainDetector: features.isMainDetector || false,
+          downloadReady: true,
+          createdAt: new Date(clip.created_at).toISOString()
+        };
+      });
+
+      const result = {
+        guestUserId,
+        totalClips: Number(totalCount[0]?.count || 0),
+        totalPages: Math.ceil(Number(totalCount[0]?.count || 0) / limit),
+        currentPage: page,
+        highlights
+      };
+
+      logger.info('사용자별 하이라이트 클립 조회 완료', {
+        guestUserId,
+        totalClips: result.totalClips,
+        currentPage: page
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('사용자별 하이라이트 클립 조회 실패', {
+        guestUserId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 참여자 클립 정보 추출 유틸리티
+   */
+  private extractParticipantClips(features: any): Array<{
+    guestUserId: string;
+    filename: string;
+    s3Url: string;
+    s3Key: string;
+    isMainDetector: boolean;
+  }> {
+    const clips: any[] = [];
+
+    // 메인 탐지자 클립
+    if (features.guestUserId && features.s3Url) {
+      clips.push({
+        guestUserId: features.guestUserId,
+        filename: features.filename || 'highlight.mp4',
+        s3Url: features.s3Url,
+        s3Key: features.s3Key || '',
+        isMainDetector: features.isMainDetector || false
+      });
+    }
+
+    // 추가 참여자 클립들 (clipsbyParticipant에서)
+    if (features.clipsbyParticipant && typeof features.clipsbyParticipant === 'object') {
+      Object.entries(features.clipsbyParticipant).forEach(([userId, clipInfo]: [string, any]) => {
+        if (clipInfo && clipInfo.s3_url && userId !== features.guestUserId) {
+          clips.push({
+            guestUserId: userId,
+            filename: clipInfo.filename || 'highlight.mp4',
+            s3Url: clipInfo.s3_url,
+            s3Key: clipInfo.s3_key || '',
+            isMainDetector: clipInfo.is_main_detector || false
+          });
+        }
+      });
+    }
+
+    return clips;
+  }
 }
