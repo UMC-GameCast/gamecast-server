@@ -135,10 +135,10 @@ export class RoomService {
       throw new BadRequestError('세션 정보와 닉네임이 필요합니다.');
     }
 
-    // 인원 수 제한 검증 (2-5명)
-    const maxCapacity = data.maxCapacity || 5;
-    if (maxCapacity < 2 || maxCapacity > 5) {
-      throw new BadRequestError('방 인원은 2명 이상 5명 이하로 설정해주세요.');
+    // 인원 수 제한 검증 (2-6명)
+    const maxCapacity = data.maxCapacity || 6;
+    if (maxCapacity < 2 || maxCapacity > 6) {
+      throw new BadRequestError('방 인원은 2명 이상 6명 이하로 설정해주세요.');
     }
 
     // 방 이름 길이 검증
