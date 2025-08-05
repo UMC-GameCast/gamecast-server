@@ -274,7 +274,7 @@ export class WebRTCService {
   private handleOffer(socket: Socket, data: WebRTCSignalData) {
     const { targetSocketId, offer } = data;
 
-    socket.to(targetSocketId).emit('offer', {
+    this.io.to(targetSocketId).emit('offer', {
       fromSocketId: socket.id,
       fromNickname: (socket as any).nickname,
       offer
@@ -286,7 +286,7 @@ export class WebRTCService {
   private handleAnswer(socket: Socket, data: WebRTCSignalData) {
     const { targetSocketId, answer } = data;
 
-    socket.to(targetSocketId).emit('answer', {
+    this.io.to(targetSocketId).emit('answer', {
       fromSocketId: socket.id,
       fromNickname: (socket as any).nickname,
       answer
@@ -298,7 +298,7 @@ export class WebRTCService {
   private handleIceCandidate(socket: Socket, data: WebRTCSignalData) {
     const { targetSocketId, candidate } = data;
 
-    socket.to(targetSocketId).emit('ice-candidate', {
+    this.io.to(targetSocketId).emit('ice-candidate', {
       fromSocketId: socket.id,
       candidate
     });
@@ -448,7 +448,7 @@ export class WebRTCService {
       });
 
       // 방의 모든 사용자에게 준비 상태 변경 알림
-      socket.to(roomCode).emit('preparation-status-updated', {
+      this.io.to(roomCode).emit('preparation-status-updated', {
         guestUserId,
         nickname: (socket as any).nickname,
         characterSetup,
@@ -533,7 +533,7 @@ export class WebRTCService {
       roomUsers.delete(socket.id);
 
       // 방의 다른 사용자들에게 퇴장 알림
-      socket.to(roomCode).emit('user-left', {
+      this.io.to(roomCode).emit('user-left', {
         socketId: socket.id,
         guestUserId,
         nickname
