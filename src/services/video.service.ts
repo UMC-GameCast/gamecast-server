@@ -760,7 +760,7 @@ export class VideoService {
                 highlightId: clip.id,
                 roomCode: roomCode,
                 gameTitle: session.recordingSettings?.gameTitle || 'League of Legends',
-                participantName: features.participantId || 'unknown',
+                participantName: features.guestUserId || 'unknown',
                 videoStartTime: parseFloat(clip.startTimestamp.toString()),
                 videoEndTime: parseFloat(clip.endTimestamp.toString()),
                 description: features.description || clip.clipName || '',

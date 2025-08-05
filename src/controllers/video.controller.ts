@@ -876,7 +876,7 @@ export class VideoController {
                 detectionFeatures: {
                   highlightId: highlight.highlight_id,
                   highlightNumber: highlight.highlight_number,
-                  participantId: participantClip.user_id,
+                  guestUserId: participantClip.user_id,
                   s3Url: participantClip.s3_url,
                   s3Key: participantClip.s3_key,
                   filename: participantClip.filename,

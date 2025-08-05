@@ -198,17 +198,33 @@ export class RoomController {
    */
   async updatePreparation(req: Request, res: Response, next: NextFunction) {
     try {
-      const { guestUserId, preparationStatus } = req.body;
+      const { guestUserId, characterSetup, screenSetup } = req.body;
 
-      if (!guestUserId || !preparationStatus) {
-        throw new BadRequestError('사용자 ID와 준비 상태 정보가 필요합니다.');
+      if (!guestUserId) {
+        throw new BadRequestError('게스트 사용자 ID가 필요합니다.');
       }
 
+      // characterSetup 또는 screenSetup 중 최소 하나는 있어야 함
+      if (!characterSetup && screenSetup === undefined) {
+        throw new BadRequestError('캐릭터 설정 또는 화면 설정 중 최소 하나는 제공되어야 합니다.');
+      }
+      // 준비 상태 데이터 구성
+      const preparationStatus: Record<string, any> = {};
+      
+      if (characterSetup) {
+        preparationStatus.characterSetup = characterSetup;
+      }
+      
+      if (screenSetup !== undefined) {
+        preparationStatus.screenSetup = screenSetup;
+      }
+      
       logger.info('준비 상태 업데이트 요청', { 
         guestUserId, 
         preparationStatus,
         ip: req.ip 
       });
+
 
       const result = await this.roomService.updatePreparationStatus(guestUserId, preparationStatus);
 

@@ -27,6 +27,7 @@ import { createRoomRoutes } from "./routes/room.routes.js";
 import webrtcRoutes from "./routes/webrtc.routes.js";
 import videoRoutes from "./routes/video.routes.js";
 import { WebRTCService } from "./services/webrtc.service.js";
+import { RoomService } from "./services/room.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
 
@@ -126,6 +127,11 @@ BigInt.prototype.toJSON = function() {
 
 // WebRTC 서비스 초기화
 const webrtcService = new WebRTCService(server);
+// Room 서비스 초기화 (WebRTC 서비스 주입)
+const roomService = new RoomService(webrtcService);
+
+// WebRTC 서비스에 Room 서비스 주입
+webrtcService.setRoomService(roomService);
 logger.info('WebRTC 시그널링 서버가 초기화되었습니다.');
 
 // 라우트 설정

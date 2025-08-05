@@ -59,6 +59,7 @@ interface CharacterStatusData {
 export class WebRTCService {
   private io: SocketIOServer;
   private rooms: Map<string, Map<string, RoomUser>> = new Map();
+  private roomService: any; // 방 서비스 인스턴스
 
   constructor(server: HTTPServer) {
     this.io = new SocketIOServer(server, {
@@ -71,6 +72,10 @@ export class WebRTCService {
 
     this.setupSocketHandlers();
     logger.info('WebRTC 시그널링 서버가 초기화되었습니다.');
+  }
+
+  public setRoomService(roomService: any) {
+    this.roomService = roomService;
   }
 
   private setupSocketHandlers() {
@@ -472,8 +477,23 @@ export class WebRTCService {
         logger.warn('방 코드가 없는 캐릭터 상태 업데이트 시도:', { socketId: socket.id });
         return;
       }
-
-      // 방의 모든 사용자에게 캐릭터 상태 변경 알림 (본인 포함)
+      // 1. DB에 캐릭터 설정 저장 (RoomService 사용)
+      if (this.roomService) {
+        try {
+          await this.roomService.updatePreparationStatus(guestUserId, {
+            characterSetup: {
+              selectedOptions,
+              selectedColors
+            }
+          });
+          
+          logger.info('캐릭터 상태가 DB에 저장됨', { guestUserId, roomCode });
+        } catch (dbError) {
+          logger.error('캐릭터 상태 DB 저장 실패:', dbError);
+          // DB 저장 실패해도 브로드캐스트는 계속 진행
+        }
+      }
+            // 방의 모든 사용자에게 캐릭터 상태 변경 알림 (본인 포함)
       this.io.to(roomCode).emit('character-status-updated', {
         guestUserId,
         nickname,
