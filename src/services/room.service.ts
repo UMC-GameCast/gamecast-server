@@ -4,6 +4,7 @@ import type { Room, GuestUser, RoomState as RoomStateType, UserRole as UserRoleT
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError, NotFoundError, ConflictError } from '../errors/errors.js';
 import type { WebRTCService } from './webrtc.service.js';
+import logger from '../logger.js';
 
 const prisma = new PrismaClient();
 
@@ -17,7 +18,7 @@ interface CreateRoomRequest {
 
 interface RoomWithParticipants extends Room {
   participants: Array<{
-    id: string;
+    guestUserId: string;
     nickname: string;
     role: string;
     joinedAt: Date;
@@ -291,7 +292,7 @@ export class RoomService {
 
     // 응답 형태 변환
     const participants = room.participants.map(p => ({
-      id: p.guestUser.id,
+      guestUserId: p.guestUser.id,
       nickname: p.guestUser.nickname,
       role: p.role,
       joinedAt: p.joinedAt,
@@ -476,7 +477,6 @@ export class RoomService {
 
       return {
         guestUserId: guestUser.id,
-        participantId: participant.id,
         nickname: guestUser.nickname,
         role: UserRole.participant,
         joinedAt: participant.joinedAt,
@@ -537,7 +537,7 @@ export class RoomService {
     const roomsWithParticipants = rooms.map(room => ({
       ...room,
       participants: room.participants.map(participant => ({
-        id: participant.id,
+        guestUserId: participant.guestUserId,
         nickname: participant.guestUser.nickname,
         role: participant.role,
         joinedAt: participant.joinedAt,
@@ -634,6 +634,10 @@ export class RoomService {
       where: {
         guestUserId: guestUserId,
         isActive: true
+      },
+      include: {
+        room: true,
+        guestUser: true
       }
     });
 
@@ -652,6 +656,27 @@ export class RoomService {
         preparationStatus: updatedStatus
       }
     });
+
+    // Socket.IO를 통해 방의 모든 참여자에게 알림
+    if (this.webrtcService && participant.room) {
+      try {
+        this.webrtcService.getIO().to(participant.room.roomCode).emit('preparation-status-updated', {
+          guestUserId,
+          nickname: participant.guestUser.nickname,
+          preparationStatus: updatedStatus,
+          updatedAt: new Date()
+        });
+
+        logger.info('준비 상태 업데이트 브로드캐스트 완료', {
+          guestUserId,
+          roomCode: participant.room.roomCode,
+          preparationStatus: updatedStatus
+        });
+      } catch (broadcastError) {
+        logger.error('준비 상태 브로드캐스트 실패:', broadcastError);
+        // 브로드캐스트 실패해도 DB 업데이트는 성공으로 처리
+      }
+    }
 
     return updatedStatus;
   }

@@ -99,7 +99,7 @@ export const leaveRoomSchema = Joi.object({
 
 // 준비 상태 업데이트 요청 검증 스키마
 export const updatePreparationSchema = Joi.object({
-  guest_user_id: Joi.string()
+  guestUserId: Joi.string()
     .guid({ version: 'uuidv4' })
     .required()
     .messages({
@@ -107,18 +107,84 @@ export const updatePreparationSchema = Joi.object({
       'any.required': '게스트 사용자 ID는 필수입니다.'
     }),
   
-  character_setup: Joi.boolean()
+  characterSetup: Joi.object({
+    selectedOptions: Joi.object({
+      face: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '얼굴 옵션은 문자열이어야 합니다.'
+        }),
+      hair: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '머리 옵션은 문자열이어야 합니다.'
+        }),
+      top: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '상의 옵션은 문자열이어야 합니다.'
+        }),
+      bottom: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '하의 옵션은 문자열이어야 합니다.'
+        }),
+      accessory: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '액세서리 옵션은 문자열이어야 합니다.'
+        })
+    })
     .optional()
     .messages({
-      'boolean.base': '캐릭터 설정 상태는 true 또는 false여야 합니다.'
+      'object.base': 'selectedOptions는 객체여야 합니다.'
     }),
+    
+    selectedColors: Joi.object({
+      face: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '얼굴 색상은 문자열이어야 합니다.'
+        }),
+      hair: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '머리 색상은 문자열이어야 합니다.'
+        }),
+      top: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '상의 색상은 문자열이어야 합니다.'
+        }),
+      bottom: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '하의 색상은 문자열이어야 합니다.'
+        }),
+      accessory: Joi.string()
+        .optional()
+        .messages({
+          'string.base': '액세서리 색상은 문자열이어야 합니다.'
+        })
+    })
+    .optional()
+    .messages({
+      'object.base': 'selectedColors는 객체여야 합니다.'
+    })
+  })
+  .optional()
+  .messages({
+    'object.base': '캐릭터 설정은 객체여야 합니다.'
+  }),
   
-  screen_setup: Joi.boolean()
+  screenSetup: Joi.boolean()
     .optional()
     .messages({
       'boolean.base': '화면 설정 상태는 true 또는 false여야 합니다.'
     })
-}).min(2); // guest_user_id 외에 최소 하나의 설정값이 있어야 함
+}).min(2).messages({
+  'object.min': 'guestUserId 외에 최소 하나의 설정값이 있어야 합니다.'
+});
 
 // 방 목록 조회 쿼리 검증 스키마
 export const getRoomsQuerySchema = Joi.object({

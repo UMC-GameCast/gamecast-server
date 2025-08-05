@@ -209,10 +209,10 @@ GameCast 실시간 게임 스트리밍 플랫폼의 백엔드 API 문서입니�
       RoomParticipant: {
         type: "object",
         properties: {
-          id: {
+          guestUserId: {
             type: "string",
             format: "uuid",
-            example: "participant-id"
+            example: "550e8400-e29b-41d4-a716-446655440001"
           },
           nickname: {
             type: "string",
@@ -232,8 +232,29 @@ GameCast 실시간 게임 스트리밍 플랫폼의 백엔드 API 문서입니�
             type: "object",
             properties: {
               characterSetup: {
-                type: "boolean",
-                example: false
+                type: "object",
+                properties: {
+                  selectedOptions: {
+                    type: "object",
+                    properties: {
+                      face: { type: "string", example: "face2" },
+                      hair: { type: "string", example: "hair1" },
+                      top: { type: "string", example: "top2" },
+                      bottom: { type: "string", example: "bottom3" },
+                      accessory: { type: "string", example: "accessories1" }
+                    }
+                  },
+                  selectedColors: {
+                    type: "object",
+                    properties: {
+                      face: { type: "string", example: "beige" },
+                      hair: { type: "string", example: "red" },
+                      top: { type: "string", example: "green" },
+                      bottom: { type: "string", example: "blue" },
+                      accessory: { type: "string", example: "yellow" }
+                    }
+                  }
+                }
               },
               screenSetup: {
                 type: "boolean",

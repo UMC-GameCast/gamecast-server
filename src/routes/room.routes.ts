@@ -920,7 +920,7 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
 /**
  * @swagger
  * /api/rooms/preparation:
- *   put:
+ *   patch:
  *     summary: 준비 상태 업데이트
  *     tags: [Rooms]
  *     requestBody:
