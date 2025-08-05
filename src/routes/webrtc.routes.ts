@@ -78,6 +78,7 @@ router.get('/connection-info', (req: Request, res: Response) => {
         'ice-candidate',
         'update-preparation-status',
         'update-character-status',
+        'ready-to-start',
         'start-recording',
         'stop-recording',
         'chat-message',
@@ -95,6 +96,9 @@ router.get('/connection-info', (req: Request, res: Response) => {
         'ice-candidate',
         'preparation-status-updated',
         'character-status-updated',
+        'user-ready',
+        'all-users-ready',
+        'ready-status-update',
         'participant-update',
         'recording-countdown-started',
         'recording-countdown',
@@ -599,6 +603,78 @@ router.get('/stats', (req: Request, res: Response) => {
  *           type: string
  *           example: "INSUFFICIENT_PERMISSION"
  *           description: "오류 코드 (선택사항)"
+ *     
+ *     # 준비 완료 관련 이벤트
+ *     ReadyToStartEvent:
+ *       type: object
+ *       description: 최종 준비 완료 이벤트 (레디 버튼)
+ *       properties:
+ *         guestUserId:
+ *           type: string
+ *           format: uuid
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *           description: "준비 완료한 사용자 ID"
+ *         nickname:
+ *           type: string
+ *           example: "플레이어1"
+ *           description: "준비 완료한 사용자 닉네임"
+ *         isReady:
+ *           type: boolean
+ *           example: true
+ *           description: "준비 완료 상태"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *           description: "준비 완료 시간"
+ *     
+ *     AllUsersReadyEvent:
+ *       type: object
+ *       description: 모든 사용자 준비 완료 알림 (방장에게 전송)
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: "모든 참여자가 준비 완료되었습니다. 녹화를 시작할 수 있습니다."
+ *           description: "방장에게 전달할 메시지"
+ *         readyCount:
+ *           type: integer
+ *           example: 4
+ *           description: "준비 완료된 참여자 수"
+ *         totalCount:
+ *           type: integer
+ *           example: 4
+ *           description: "총 참여자 수"
+ *         canStartRecording:
+ *           type: boolean
+ *           example: true
+ *           description: "녹화 시작 가능 여부"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *           description: "알림 시간"
+ *     
+ *     ReadyStatusUpdateEvent:
+ *       type: object
+ *       description: 준비 상태 업데이트 알림
+ *       properties:
+ *         readyCount:
+ *           type: integer
+ *           example: 2
+ *           description: "준비 완료된 참여자 수"
+ *         totalCount:
+ *           type: integer
+ *           example: 4
+ *           description: "총 참여자 수"
+ *         canStartRecording:
+ *           type: boolean
+ *           example: false
+ *           description: "녹화 시작 가능 여부"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *           description: "업데이트 시간"
  *     
  *     # 참여자 입장/퇴장 이벤트
  *     UserJoinedEvent:
