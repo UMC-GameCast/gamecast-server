@@ -16,11 +16,11 @@ export const createRoomSchema = Joi.object({
   maxCapacity: Joi.number()
     .integer()
     .min(2)
-    .max(5)
+    .max(6)
     .default(5)
     .messages({
       'number.min': '최소 인원은 2명입니다.',
-      'number.max': '최대 인원은 5명입니다.',
+      'number.max': '최대 인원은 6명입니다.',
       'number.integer': '인원 수는 정수여야 합니다.'
     }),
   

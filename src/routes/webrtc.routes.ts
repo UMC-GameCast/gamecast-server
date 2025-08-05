@@ -70,14 +70,39 @@ router.get('/connection-info', (req: Request, res: Response) => {
     signaling: {
       socketUrl: `ws://${req.get('host')}`,
       namespace: '/',
-      events: [
+      clientEvents: [
         'join-room',
         'leave-room',
         'offer',
         'answer',
         'ice-candidate',
+        'update-preparation-status',
+        'update-character-status',
+        'start-recording',
+        'stop-recording',
         'chat-message',
+        'audio-quality-report',
         'request-room-users'
+      ],
+      serverEvents: [
+        'joined-room-success',
+        'join-room-error',
+        'user-joined',
+        'user-left',
+        'room-users',
+        'offer',
+        'answer',
+        'ice-candidate',
+        'preparation-status-updated',
+        'character-status-updated',
+        'participant-update',
+        'recording-countdown-started',
+        'recording-countdown',
+        'recording-started',
+        'recording-stopped',
+        'recording-error',
+        'chat-message',
+        'error'
       ]
     },
     supportedCodecs: ['H264', 'VP8', 'VP9', 'AV1', 'Opus', 'G722'],
@@ -160,6 +185,7 @@ router.get('/stats', (req: Request, res: Response) => {
  * @swagger
  * components:
  *   schemas:
+ *     # 기본 Socket.IO 이벤트 구조
  *     WebRTCSocketEvent:
  *       type: object
  *       description: WebRTC Socket.IO 이벤트 구조
@@ -177,43 +203,355 @@ router.get('/stats', (req: Request, res: Response) => {
  *           guestUserId: "user-123"
  *           nickname: "사용자1"
  *     
+ *     # 방 참여 관련 이벤트
+ *     JoinRoomEvent:
+ *       type: object
+ *       description: 방 참여 이벤트 데이터
+ *       required: ["roomCode", "guestUserId", "nickname"]
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *           description: "6자리 방 코드"
+ *         guestUserId:
+ *           type: string
+ *           format: uuid
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *           description: "참여자 UUID"
+ *         nickname:
+ *           type: string
+ *           example: "플레이어1"
+ *           description: "참여자 닉네임"
+ *     
+ *     JoinedRoomSuccessEvent:
+ *       type: object
+ *       description: 방 참여 성공 응답
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *         roomId:
+ *           type: string
+ *           format: uuid
+ *           example: "f8a6aadf-aa19-4d5e-9026-aff1ae920033"
+ *         users:
+ *           type: array
+ *           items:
+ *             $ref: "#/components/schemas/RoomUser"
+ *     
+ *     RoomUser:
+ *       type: object
+ *       description: 방 참여자 정보
+ *       properties:
+ *         socketId:
+ *           type: string
+ *           example: "socket_123"
+ *         guestUserId:
+ *           type: string
+ *           format: uuid
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *         nickname:
+ *           type: string
+ *           example: "플레이어1"
+ *         isHost:
+ *           type: boolean
+ *           example: false
+ *         joinedAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *     
+ *     # WebRTC 시그널링 이벤트
  *     WebRTCOffer:
  *       type: object
  *       description: WebRTC Offer 데이터
+ *       required: ["targetSocketId", "offer"]
  *       properties:
- *         offer:
- *           type: object
- *           description: RTCSessionDescription
  *         targetSocketId:
  *           type: string
- *           description: 대상 소켓 ID
- *       example:
+ *           example: "socket-123"
+ *           description: "대상 소켓 ID"
  *         offer:
- *           type: "offer"
- *           sdp: "v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\n..."
- *         targetSocketId: "socket-123"
+ *           type: object
+ *           description: "RTCSessionDescription"
+ *           properties:
+ *             type:
+ *               type: string
+ *               example: "offer"
+ *             sdp:
+ *               type: string
+ *               example: "v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\n..."
  *     
  *     WebRTCAnswer:
  *       type: object
  *       description: WebRTC Answer 데이터
+ *       required: ["targetSocketId", "answer"]
  *       properties:
- *         answer:
- *           type: object
- *           description: RTCSessionDescription
  *         targetSocketId:
  *           type: string
- *           description: 대상 소켓 ID
+ *           example: "socket-123"
+ *           description: "대상 소켓 ID"
+ *         answer:
+ *           type: object
+ *           description: "RTCSessionDescription"
+ *           properties:
+ *             type:
+ *               type: string
+ *               example: "answer"
+ *             sdp:
+ *               type: string
+ *               example: "v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\n..."
  *     
  *     ICECandidate:
  *       type: object
  *       description: ICE Candidate 데이터
+ *       required: ["targetSocketId", "candidate"]
  *       properties:
- *         candidate:
- *           type: object
- *           description: RTCIceCandidate
  *         targetSocketId:
  *           type: string
- *           description: 대상 소켓 ID
+ *           example: "socket-123"
+ *           description: "대상 소켓 ID"
+ *         candidate:
+ *           type: object
+ *           description: "RTCIceCandidate"
+ *           properties:
+ *             candidate:
+ *               type: string
+ *               example: "candidate:842163049 1 udp 1677729535 192.168.0.1 54400 typ srflx raddr 0.0.0.0 rport 0 generation 0"
+ *             sdpMLineIndex:
+ *               type: number
+ *               example: 0
+ *             sdpMid:
+ *               type: string
+ *               example: "0"
+ *     
+ *     # 준비 상태 관련 이벤트
+ *     PreparationStatusEvent:
+ *       type: object
+ *       description: 준비 상태 업데이트 이벤트
+ *       required: ["characterSetup", "screenSetup"]
+ *       properties:
+ *         characterSetup:
+ *           type: boolean
+ *           example: true
+ *           description: "캐릭터 설정 완료 여부"
+ *         screenSetup:
+ *           type: boolean
+ *           example: false
+ *           description: "화면 설정 완료 여부"
+ *     
+ *     CharacterStatusEvent:
+ *       type: object
+ *       description: 캐릭터 상태 업데이트 이벤트
+ *       required: ["selectedOptions", "selectedColors"]
+ *       properties:
+ *         selectedOptions:
+ *           type: object
+ *           description: "캐릭터 선택 옵션"
+ *           properties:
+ *             face:
+ *               type: string
+ *               example: "face2"
+ *             hair:
+ *               type: string
+ *               example: "hair1"
+ *             top:
+ *               type: string
+ *               example: "top2"
+ *             bottom:
+ *               type: string
+ *               example: "bottom3"
+ *             accessory:
+ *               type: string
+ *               example: "accessories1"
+ *         selectedColors:
+ *           type: object
+ *           description: "캐릭터 색상 설정"
+ *           properties:
+ *             face:
+ *               type: string
+ *               example: "beige"
+ *             hair:
+ *               type: string
+ *               example: "red"
+ *             top:
+ *               type: string
+ *               example: "green"
+ *             bottom:
+ *               type: string
+ *               example: "blue"
+ *             accessory:
+ *               type: string
+ *               example: "yellow"
+ *     
+ *     # 녹화 관련 이벤트
+ *     StartRecordingEvent:
+ *       type: object
+ *       description: 녹화 시작 이벤트
+ *       required: ["roomCode"]
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *           description: "방 코드"
+ *     
+ *     StopRecordingEvent:
+ *       type: object
+ *       description: 녹화 중단 이벤트 (방장 전용)
+ *       required: ["roomCode"]
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *           description: "방 코드"
+ *         sessionId:
+ *           type: string
+ *           example: "rec_session_123"
+ *           description: "녹화 세션 ID (선택사항)"
+ *     
+ *     RecordingStartedEvent:
+ *       type: object
+ *       description: 녹화 시작 알림
+ *       properties:
+ *         sessionId:
+ *           type: string
+ *           example: "rec_session_123"
+ *         startedBy:
+ *           type: string
+ *           example: "플레이어1"
+ *           description: "녹화 시작자 (SYSTEM인 경우 자동 시작)"
+ *         autoStarted:
+ *           type: boolean
+ *           example: true
+ *           description: "자동 시작 여부"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *     
+ *     RecordingStoppedEvent:
+ *       type: object
+ *       description: 녹화 종료 알림
+ *       properties:
+ *         sessionId:
+ *           type: string
+ *           example: "rec_session_123"
+ *         stoppedBy:
+ *           type: string
+ *           example: "방장닉네임"
+ *         stoppedByHost:
+ *           type: boolean
+ *           example: true
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *     
+ *     RecordingCountdownEvent:
+ *       type: object
+ *       description: 녹화 카운트다운 이벤트
+ *       properties:
+ *         countdown:
+ *           type: integer
+ *           example: 3
+ *           description: "카운트다운 시간 (초)"
+ *         count:
+ *           type: integer
+ *           example: 2
+ *           description: "현재 카운트"
+ *         message:
+ *           type: string
+ *           example: "모든 참여자가 준비되었습니다! 녹화가 곧 시작됩니다."
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *     
+ *     # 채팅 관련 이벤트
+ *     ChatMessageEvent:
+ *       type: object
+ *       description: 채팅 메시지 이벤트
+ *       required: ["roomCode", "message", "timestamp"]
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *         message:
+ *           type: string
+ *           example: "안녕하세요!"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *     
+ *     ChatMessageReceived:
+ *       type: object
+ *       description: 수신된 채팅 메시지
+ *       properties:
+ *         roomCode:
+ *           type: string
+ *           example: "ABC123"
+ *         message:
+ *           type: string
+ *           example: "안녕하세요!"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-08-05T10:30:00.000Z"
+ *         senderSocketId:
+ *           type: string
+ *           example: "socket_123"
+ *         senderNickname:
+ *           type: string
+ *           example: "플레이어1"
+ *         senderGuestUserId:
+ *           type: string
+ *           format: uuid
+ *           example: "550e8400-e29b-41d4-a716-446655440001"
+ *     
+ *     # 모니터링 관련 이벤트
+ *     AudioQualityReportEvent:
+ *       type: object
+ *       description: 음성 품질 리포트
+ *       required: ["latency", "packetLoss", "audioLevel"]
+ *       properties:
+ *         latency:
+ *           type: number
+ *           example: 50
+ *           description: "지연시간 (ms)"
+ *         packetLoss:
+ *           type: number
+ *           example: 0.1
+ *           description: "패킷 손실률 (0-1)"
+ *         audioLevel:
+ *           type: number
+ *           example: 0.8
+ *           description: "음성 레벨 (0-1)"
+ *     
+ *     # 오류 관련 이벤트
+ *     SocketErrorEvent:
+ *       type: object
+ *       description: Socket.IO 오류 이벤트
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: "녹화 중단은 방장만 할 수 있습니다."
+ *         code:
+ *           type: string
+ *           example: "INSUFFICIENT_PERMISSION"
+ *           description: "오류 코드 (선택사항)"
+ *     
+ *     RecordingErrorEvent:
+ *       type: object
+ *       description: 녹화 관련 오류 이벤트
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: "녹화 시작 중 오류가 발생했습니다."
+ *         code:
+ *           type: string
+ *           example: "RECORDING_START_FAILED"
+ *           description: "오류 코드 (선택사항)"
  */
 
 export default router;
