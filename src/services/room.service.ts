@@ -311,31 +311,114 @@ export class RoomService {
     }
 
     // 응답 형태 변환 - 캐릭터 정보 포함
-    const participants = room.participants.map(p => {
-      const status = p.preparationStatus as any;
-      const characterInfo = status?.characterSetup || null;
-      
-      return {
-        guestUserId: p.guestUser.id,
-        nickname: p.guestUser.nickname,
-        role: p.role,
-        joinedAt: p.joinedAt,
-        preparationStatus: {
-          characterSetup: status?.characterSetup || false,
-          screenSetup: status?.screenSetup || false
-        },
-        characterInfo: characterInfo ? {
-          selectedOptions: characterInfo.selectedOptions || null,
-          selectedColors: characterInfo.selectedColors || null,
-          isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
-        } : null
-      };
-    });
+    const participants = room.participants.map(p => this.formatParticipantData(p));
 
     return {
       ...room,
       participants
     };
+  }
+
+  /**
+   * 공통: 참여자 정보 포맷팅 (캐릭터 정보 포함)
+   */
+  private formatParticipantData(participant: any, hostGuestId?: string | null) {
+    const status = participant.preparationStatus as any;
+    const characterInfo = status?.characterSetup || null;
+    
+    return {
+      guestUserId: participant.guestUser?.id || participant.guestUserId,
+      nickname: participant.guestUser?.nickname || participant.nickname,
+      role: participant.role,
+      joinedAt: participant.joinedAt,
+      preparationStatus: {
+        characterSetup: status?.characterSetup || false,
+        screenSetup: status?.screenSetup || false
+      },
+      characterInfo: characterInfo ? {
+        selectedOptions: characterInfo.selectedOptions || null,
+        selectedColors: characterInfo.selectedColors || null,
+        isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+      } : null,
+      isHost: hostGuestId ? hostGuestId === participant.guestUserId : false
+    };
+  }
+
+  /**
+   * WebRTC용: 소켓 정보가 포함된 방 사용자 목록 조회
+   */
+  async getRoomUsersForWebRTC(roomCode: string): Promise<Array<{
+    socketId: string | null;
+    guestUserId: string;
+    nickname: string;
+    isHost: boolean;
+    joinedAt: Date;
+    preparationStatus: {
+      characterSetup: boolean;
+      screenSetup: boolean;
+    };
+    characterInfo: {
+      selectedOptions: {
+        face: string;
+        hair: string;
+        top: string;
+        bottom: string;
+        accessory: string;
+      } | null;
+      selectedColors: {
+        face: string;
+        hair: string;
+        top: string;
+        bottom: string;
+        accessory: string;
+      } | null;
+      isCustomized: boolean;
+    } | null;
+  }>> {
+    try {
+      const room = await prisma.room.findFirst({
+        where: { roomCode },
+        include: {
+          participants: {
+            where: { isActive: true },
+            include: {
+              guestUser: {
+                select: {
+                  id: true,
+                  nickname: true
+                }
+              }
+            },
+            orderBy: {
+              joinedAt: 'asc'
+            }
+          },
+          hostGuest: {
+            select: {
+              id: true
+            }
+          }
+        }
+      });
+
+      if (!room) {
+        return [];
+      }
+
+      // WebRTC 서비스에서 소켓 정보를 추가할 수 있도록 기본 구조 반환
+      return room.participants.map(participant => {
+        const formattedData = this.formatParticipantData(participant, room.hostGuest?.id);
+        
+        return {
+          socketId: null, // WebRTC 서비스에서 설정
+          ...formattedData
+        };
+      });
+
+    } catch (error) {
+      logger.error('WebRTC용 방 사용자 목록 조회 오류:', error);
+      return [];
+    }
   }
 
   /**
@@ -483,25 +566,10 @@ export class RoomService {
       });
 
       const participantInfo = updatedParticipants.map(p => {
-        const status = p.preparationStatus as any;
-        const characterInfo = status?.characterSetup || null;
-        
+        const formattedData = this.formatParticipantData(p, room.hostGuestId);
         return {
           id: p.id,
-          guestUserId: p.guestUserId,
-          nickname: p.guestUser.nickname,
-          role: p.role,
-          joinedAt: p.joinedAt,
-          preparationStatus: {
-            characterSetup: status?.characterSetup || false,
-            screenSetup: status?.screenSetup || false
-          },
-          characterInfo: characterInfo ? {
-            selectedOptions: characterInfo.selectedOptions || null,
-            selectedColors: characterInfo.selectedColors || null,
-            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
-          } : null,
-          isHost: room.hostGuestId === p.guestUserId
+          ...formattedData
         };
       });
 
@@ -582,26 +650,9 @@ export class RoomService {
 
     const roomsWithParticipants = rooms.map(room => ({
       ...room,
-      participants: room.participants.map(participant => {
-        const status = participant.preparationStatus as any;
-        const characterInfo = status?.characterSetup || null;
-        
-        return {
-          guestUserId: participant.guestUserId,
-          nickname: participant.guestUser.nickname,
-          role: participant.role,
-          joinedAt: participant.joinedAt,
-          preparationStatus: {
-            characterSetup: status?.characterSetup || false,
-            screenSetup: status?.screenSetup || false
-          },
-          characterInfo: characterInfo ? {
-            selectedOptions: characterInfo.selectedOptions || null,
-            selectedColors: characterInfo.selectedColors || null,
-            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
-          } : null
-        };
-      })
+      participants: room.participants.map(participant => 
+        this.formatParticipantData(participant, room.hostGuestId)
+      )
     }));
 
     return {
@@ -808,25 +859,10 @@ export class RoomService {
       });
 
       const participantInfo = remainingParticipants.map(p => {
-        const status = p.preparationStatus as any;
-        const characterInfo = status?.characterSetup || null;
-        
+        const formattedData = this.formatParticipantData(p, participant.room.hostGuestId);
         return {
           id: p.id,
-          guestUserId: p.guestUserId,
-          nickname: p.guestUser.nickname,
-          role: p.role,
-          joinedAt: p.joinedAt,
-          preparationStatus: {
-            characterSetup: status?.characterSetup || false,
-            screenSetup: status?.screenSetup || false
-          },
-          characterInfo: characterInfo ? {
-            selectedOptions: characterInfo.selectedOptions || null,
-            selectedColors: characterInfo.selectedColors || null,
-            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
-          } : null,
-          isHost: participant.room.hostGuestId === p.guestUserId
+          ...formattedData
         };
       });
 

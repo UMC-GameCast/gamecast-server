@@ -235,13 +235,32 @@ export class WebRTCService {
         isHost
       });
 
-      // 현재 방 참여자들에게 새 참여자 알림
-      socket.to(roomCode).emit('user-joined', {
-        socketId: socket.id,
-        guestUserId,
-        nickname,
-        joinedAt: new Date()
+      // 현재 방 참여자들에게 새 참여자 알림 (캐릭터 정보 포함)
+      const guestUser = await prisma.guestUser.findUnique({
+        where: { id: guestUserId },
+        include: { 
+          characters: {
+            where: { roomId: room.id },
+            include: {
+              customizations: {
+                include: { component: true }
+              }
+            }
+          }
+        }
       });
+
+      const newParticipantWithCharacter = await this.roomService.formatParticipantData({
+        id: guestUserId,
+        nickname,
+        socketId: socket.id,
+        joinedAt: new Date(),
+        room: { code: roomCode } as any,
+        user: null, // GuestUser는 User 모델과 직접 연결되지 않음
+        characters: guestUser?.characters || []
+      });
+
+      socket.to(roomCode).emit('user-joined', newParticipantWithCharacter);
 
       // 현재 방 참여자 목록 전송 (캐릭터 정보 포함)
       const roomUsers = await this.getRoomUsersWithCharacterInfo(roomCode);
@@ -612,12 +631,32 @@ export class WebRTCService {
         }
       }
 
-      // 방의 다른 사용자들에게 퇴장 알림
-      this.io.to(roomCode).emit('user-left', {
-        socketId: socket.id,
-        guestUserId,
-        nickname
+      // 방의 다른 사용자들에게 퇴장 알림 (캐릭터 정보 포함)
+      const leavingGuestUser = await prisma.guestUser.findUnique({
+        where: { id: guestUserId },
+        include: { 
+          characters: {
+            where: { roomId: (socket as any).roomId },
+            include: {
+              customizations: {
+                include: { component: true }
+              }
+            }
+          }
+        }
       });
+
+      const leavingParticipantWithCharacter = await this.roomService.formatParticipantData({
+        id: guestUserId,
+        nickname,
+        socketId: socket.id,
+        joinedAt: new Date(), // 실제로는 기존 joinedAt을 사용해야 하지만 여기서는 임시
+        room: { code: roomCode } as any,
+        user: null,
+        characters: leavingGuestUser?.characters || []
+      });
+
+      this.io.to(roomCode).emit('user-left', leavingParticipantWithCharacter);
 
       // 방이 비어있으면 정리
       if (roomUsers.size === 0) {
@@ -748,69 +787,33 @@ export class WebRTCService {
   }
 
   /**
-   * 캐릭터 정보를 포함한 방 사용자 목록 조회
+   * 캐릭터 정보를 포함한 방 사용자 목록 조회 (RoomService 활용)
    */
   private async getRoomUsersWithCharacterInfo(roomCode: string) {
     try {
-      const room = await prisma.room.findFirst({
-        where: { roomCode },
-        include: {
-          participants: {
-            where: { isActive: true },
-            include: {
-              guestUser: {
-                select: {
-                  id: true,
-                  nickname: true
-                }
-              }
-            },
-            orderBy: {
-              joinedAt: 'asc'
-            }
-          },
-          hostGuest: {
-            select: {
-              id: true
-            }
-          }
-        }
-      });
-
-      if (!room) {
+      if (!this.roomService) {
+        logger.error('RoomService가 설정되지 않음');
         return [];
       }
 
+      // RoomService의 공통 메서드 활용
+      const participants = await this.roomService.getRoomUsersForWebRTC(roomCode);
+      
+      // 소켓 정보 추가
       const socketRoomUsers = this.rooms.get(roomCode);
       if (!socketRoomUsers) {
-        return [];
+        return participants;
       }
 
-      // DB의 참여자 정보와 소켓 정보를 결합
-      return room.participants.map(participant => {
-        const status = participant.preparationStatus as any;
-        const characterInfo = status?.characterSetup || null;
-        
+      return participants.map((participant: any) => {
         // 소켓 정보 찾기
         const socketUser = Array.from(socketRoomUsers.values()).find(
           user => user.guestUserId === participant.guestUserId
         );
 
         return {
-          socketId: socketUser?.socketId || null,
-          guestUserId: participant.guestUserId,
-          nickname: participant.guestUser.nickname,
-          isHost: room.hostGuest?.id === participant.guestUserId,
-          joinedAt: participant.joinedAt,
-          preparationStatus: {
-            characterSetup: status?.characterSetup || false,
-            screenSetup: status?.screenSetup || false
-          },
-          characterInfo: characterInfo ? {
-            selectedOptions: characterInfo.selectedOptions || null,
-            selectedColors: characterInfo.selectedColors || null,
-            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
-          } : null
+          ...participant,
+          socketId: socketUser?.socketId || null
         };
       });
 
