@@ -903,6 +903,9 @@ export class VideoController {
           }
         }
 
+        // 4. WebRTC를 통해 방 참여자들에게 하이라이트 완성 알림 전송
+        await this.notifyHighlightCompletion(callbackData.room_code, highlightAnalysis.id, callbackData.highlights.length);
+
         logger.info('하이라이트 콜백 데이터 저장 완료', {
           roomCode: callbackData.room_code,
           recordingSessionId: recordingSession.id,
@@ -919,6 +922,173 @@ export class VideoController {
       // 저장 실패해도 응답은 성공으로 처리 (콜백 자체는 정상 처리됨)
     }
   }
+
+  /**
+   * 하이라이트 완성 알림을 방 참여자들에게 전송
+   */
+  private async notifyHighlightCompletion(roomCode: string, analysisId: string, highlightCount: number): Promise<void> {
+    try {
+      // WebRTC 서비스를 통해 Socket.IO로 알림 전송
+      const { WebRTCService } = await import('../services/webrtc.service.js');
+      
+      // 글로벌 WebRTC 서비스 인스턴스 가져오기 (실제 구현에서는 DI 컨테이너 사용)
+      const io = (global as any).webrtcService?.getIO();
+      
+      if (io) {
+        io.to(roomCode).emit('highlight-clips-ready', {
+          roomCode,
+          analysisId,
+          highlightCount,
+          message: `${highlightCount}개의 하이라이트 클립이 완성되었습니다!`,
+          downloadAvailable: true,
+          timestamp: new Date().toISOString()
+        });
+
+        logger.info('하이라이트 완성 알림 전송 완료', {
+          roomCode,
+          analysisId,
+          highlightCount
+        });
+      } else {
+        logger.warn('WebRTC 서비스를 찾을 수 없어 알림 전송 실패', { roomCode });
+      }
+    } catch (error) {
+      logger.error('하이라이트 완성 알림 전송 실패', {
+        roomCode,
+        error
+      });
+    }
+  }
+
+  /**
+   * 방의 하이라이트 클립 목록 조회
+   */
+  public getHighlightClips = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { roomCode } = req.params;
+
+      logger.info('하이라이트 클립 목록 조회 요청', { roomCode });
+
+      const result = await this.videoService.getHighlightClipsByRoom(roomCode);
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '하이라이트 클립 목록을 성공적으로 조회했습니다.',
+          data: result
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 클립 목록 조회 실패', {
+        roomCode: req.params.roomCode,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'HIGHLIGHT_CLIPS_FETCH_FAILED',
+          reason: error instanceof Error ? error.message : '하이라이트 클립 조회 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 하이라이트 클립 다운로드 링크 생성
+   */
+  public generateDownloadLink = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { clipId } = req.params;
+      const { expiresIn = 3600 } = req.query; // 기본 1시간
+
+      logger.info('하이라이트 클립 다운로드 링크 생성 요청', { 
+        clipId, 
+        expiresIn: Number(expiresIn) 
+      });
+
+      const result = await this.videoService.generateClipDownloadLink(
+        clipId, 
+        Number(expiresIn)
+      );
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '다운로드 링크가 성공적으로 생성되었습니다.',
+          data: result
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 클립 다운로드 링크 생성 실패', {
+        clipId: req.params.clipId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'DOWNLOAD_LINK_GENERATION_FAILED',
+          reason: error instanceof Error ? error.message : '다운로드 링크 생성 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 사용자별 하이라이트 클립 조회
+   */
+  public getUserHighlightClips = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { guestUserId } = req.params;
+      const { page = 1, limit = 10 } = req.query;
+
+      logger.info('사용자별 하이라이트 클립 조회 요청', { 
+        guestUserId, 
+        page: Number(page), 
+        limit: Number(limit) 
+      });
+
+      const result = await this.videoService.getUserHighlightClips(
+        guestUserId,
+        Number(page),
+        Number(limit)
+      );
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '사용자 하이라이트 클립을 성공적으로 조회했습니다.',
+          data: result
+        }
+      });
+
+    } catch (error) {
+      logger.error('사용자별 하이라이트 클립 조회 실패', {
+        guestUserId: req.params.guestUserId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'USER_HIGHLIGHT_CLIPS_FETCH_FAILED',
+          reason: error instanceof Error ? error.message : '사용자 하이라이트 클립 조회 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
 
   /**
    * 디버깅용: 메모리에 저장된 방별 영상 정보 조회
