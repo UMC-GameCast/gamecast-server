@@ -243,8 +243,8 @@ export class WebRTCService {
         joinedAt: new Date()
       });
 
-      // 현재 방 참여자 목록 전송
-      const roomUsers = Array.from(this.rooms.get(roomCode)!.values());
+      // 현재 방 참여자 목록 전송 (캐릭터 정보 포함)
+      const roomUsers = await this.getRoomUsersWithCharacterInfo(roomCode);
       socket.emit('room-users', roomUsers);
 
       // 방 참여 성공 알림
@@ -529,6 +529,11 @@ export class WebRTCService {
         nickname,
         selectedOptions,
         selectedColors,
+        characterInfo: {
+          selectedOptions,
+          selectedColors,
+          isCustomized: !!(selectedOptions && selectedColors)
+        },
         updatedAt: new Date()
       });
 
@@ -721,30 +726,97 @@ export class WebRTCService {
   private handleRequestRoomUsers(socket: Socket, data: { roomCode: string }) {
     try {
       const { roomCode } = data;
-      const roomUsers = this.rooms.get(roomCode);
       
-      if (!roomUsers) {
+      if (!this.rooms.has(roomCode)) {
         socket.emit('error', { message: '방을 찾을 수 없습니다.' });
         return;
       }
 
-      // 현재 방의 사용자 목록을 배열로 변환
-      const users = Array.from(roomUsers.values()).map(user => ({
-        socketId: user.socketId,
-        guestUserId: user.guestUserId,
-        nickname: user.nickname,
-        isHost: user.isHost,
-        joinedAt: user.joinedAt
-      }));
-
-      // 요청한 클라이언트에게 사용자 목록 전송
-      socket.emit('room-users', users);
-      
-      logger.info(`방 사용자 목록 전송: ${roomCode} -> ${users.length}명`);
+      // 캐릭터 정보를 포함한 방 사용자 목록 조회
+      this.getRoomUsersWithCharacterInfo(roomCode).then(users => {
+        socket.emit('room-users', users);
+        logger.info(`방 사용자 목록 전송: ${roomCode} -> ${users.length}명`);
+      }).catch(error => {
+        logger.error('방 사용자 목록 조회 오류:', error);
+        socket.emit('error', { message: '사용자 목록을 가져올 수 없습니다.' });
+      });
 
     } catch (error) {
       logger.error('방 사용자 목록 요청 처리 오류:', error);
       socket.emit('error', { message: '사용자 목록을 가져올 수 없습니다.' });
+    }
+  }
+
+  /**
+   * 캐릭터 정보를 포함한 방 사용자 목록 조회
+   */
+  private async getRoomUsersWithCharacterInfo(roomCode: string) {
+    try {
+      const room = await prisma.room.findFirst({
+        where: { roomCode },
+        include: {
+          participants: {
+            where: { isActive: true },
+            include: {
+              guestUser: {
+                select: {
+                  id: true,
+                  nickname: true
+                }
+              }
+            },
+            orderBy: {
+              joinedAt: 'asc'
+            }
+          },
+          hostGuest: {
+            select: {
+              id: true
+            }
+          }
+        }
+      });
+
+      if (!room) {
+        return [];
+      }
+
+      const socketRoomUsers = this.rooms.get(roomCode);
+      if (!socketRoomUsers) {
+        return [];
+      }
+
+      // DB의 참여자 정보와 소켓 정보를 결합
+      return room.participants.map(participant => {
+        const status = participant.preparationStatus as any;
+        const characterInfo = status?.characterSetup || null;
+        
+        // 소켓 정보 찾기
+        const socketUser = Array.from(socketRoomUsers.values()).find(
+          user => user.guestUserId === participant.guestUserId
+        );
+
+        return {
+          socketId: socketUser?.socketId || null,
+          guestUserId: participant.guestUserId,
+          nickname: participant.guestUser.nickname,
+          isHost: room.hostGuest?.id === participant.guestUserId,
+          joinedAt: participant.joinedAt,
+          preparationStatus: {
+            characterSetup: status?.characterSetup || false,
+            screenSetup: status?.screenSetup || false
+          },
+          characterInfo: characterInfo ? {
+            selectedOptions: characterInfo.selectedOptions || null,
+            selectedColors: characterInfo.selectedColors || null,
+            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+          } : null
+        };
+      });
+
+    } catch (error) {
+      logger.error('캐릭터 정보를 포함한 방 사용자 목록 조회 오류:', error);
+      return [];
     }
   }
 
@@ -759,7 +831,27 @@ export class WebRTCService {
       nickname: string;
       role: string;
       joinedAt: Date;
-      preparationStatus: any;
+      preparationStatus: {
+        characterSetup: boolean;
+        screenSetup: boolean;
+      };
+      characterInfo: {
+        selectedOptions: {
+          face: string;
+          hair: string;
+          top: string;
+          bottom: string;
+          accessory: string;
+        } | null;
+        selectedColors: {
+          face: string;
+          hair: string;
+          top: string;
+          bottom: string;
+          accessory: string;
+        } | null;
+        isCustomized: boolean;
+      } | null;
       isHost: boolean;
     }>;
     newParticipant?: {
@@ -767,6 +859,23 @@ export class WebRTCService {
       nickname: string;
       role: string;
       joinedAt: Date;
+      characterInfo?: {
+        selectedOptions: {
+          face: string;
+          hair: string;
+          top: string;
+          bottom: string;
+          accessory: string;
+        } | null;
+        selectedColors: {
+          face: string;
+          hair: string;
+          top: string;
+          bottom: string;
+          accessory: string;
+        } | null;
+        isCustomized: boolean;
+      } | null;
     };
     leftParticipant?: {
       guestUserId: string;

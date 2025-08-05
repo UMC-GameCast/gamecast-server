@@ -263,7 +263,7 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
  *                       items:
  *                         type: object
  *                         properties:
- *                           id:
+ *                           guestUserId:
  *                             type: string
  *                             format: uuid
  *                             example: "550e8400-e29b-41d4-a716-446655440002"
@@ -272,12 +272,90 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
  *                             example: "플레이어1"
  *                           role:
  *                             type: string
- *                             enum: [host, guest]
- *                             example: "guest"
+ *                             enum: [host, participant]
+ *                             example: "participant"
  *                           joinedAt:
  *                             type: string
  *                             format: date-time
  *                             example: "2025-07-26T10:35:00.000Z"
+ *                           preparationStatus:
+ *                             type: object
+ *                             properties:
+ *                               characterSetup:
+ *                                 type: boolean
+ *                                 example: true
+ *                               screenSetup:
+ *                                 type: boolean
+ *                                 example: false
+ *                           characterInfo:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               selectedOptions:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 properties:
+ *                                   face:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "face1"
+ *                                   hair:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "hair2"
+ *                                   top:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "shirt1"
+ *                                   bottom:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "pants1"
+ *                                   accessory:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "hat1"
+ *                               selectedColors:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 properties:
+ *                                   face:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "default"
+ *                                   hair:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "black"
+ *                                   top:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "blue"
+ *                                   bottom:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "navy"
+ *                                   accessory:
+ *                                     type: string
+ *                                     nullable: true
+ *                                     example: "red"
+ *                               isCustomized:
+ *                                 type: boolean
+ *                                 example: true
+ *                             example:
+ *                               selectedOptions:
+ *                                 face: "face1"
+ *                                 hair: "hair2"
+ *                                 top: "shirt1"
+ *                                 bottom: "pants1"
+ *                                 accessory: "hat1"
+ *                               selectedColors:
+ *                                 face: "default"
+ *                                 hair: "black"
+ *                                 top: "blue"
+ *                                 bottom: "navy"
+ *                                 accessory: "red"
+ *                               isCustomized: true
  *       404:
  *         description: 방을 찾을 수 없음
  *         content:
