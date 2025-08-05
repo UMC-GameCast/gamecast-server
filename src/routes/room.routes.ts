@@ -917,7 +917,6 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
     roomController.updateRoomState.bind(roomController)
   );
 
-
 /**
  * @swagger
  * /api/rooms/preparation:
@@ -938,11 +937,91 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
  *                 format: uuid
  *                 example: "550e8400-e29b-41d4-a716-446655440001"
  *               characterSetup:
- *                 type: boolean
- *                 example: true
+ *                 type: object
+ *                 description: 캐릭터 커스터마이징 설정
+ *                 properties:
+ *                   selectedOptions:
+ *                     type: object
+ *                     description: 선택된 캐릭터 옵션들
+ *                     properties:
+ *                       face:
+ *                         type: string
+ *                         example: "face2"
+ *                       hair:
+ *                         type: string
+ *                         example: "hair1"
+ *                       top:
+ *                         type: string
+ *                         example: "top2"
+ *                       bottom:
+ *                         type: string
+ *                         example: "bottom3"
+ *                       accessory:
+ *                         type: string
+ *                         example: "accessories1"
+ *                   selectedColors:
+ *                     type: object
+ *                     description: 선택된 색상들
+ *                     properties:
+ *                       face:
+ *                         type: string
+ *                         example: "beige"
+ *                       hair:
+ *                         type: string
+ *                         example: "red"
+ *                       top:
+ *                         type: string
+ *                         example: "green"
+ *                       bottom:
+ *                         type: string
+ *                         example: "blue"
+ *                       accessory:
+ *                         type: string
+ *                         example: "yellow"
  *               screenSetup:
  *                 type: boolean
  *                 example: false
+ *           examples:
+ *             characterOnly:
+ *               summary: 캐릭터 설정만 업데이트
+ *               value:
+ *                 guestUserId: "550e8400-e29b-41d4-a716-446655440001"
+ *                 characterSetup:
+ *                   selectedOptions:
+ *                     face: "face2"
+ *                     hair: "hair1"
+ *                     top: "top2"
+ *                     bottom: "bottom3"
+ *                     accessory: "accessories1"
+ *                   selectedColors:
+ *                     face: "beige"
+ *                     hair: "red"
+ *                     top: "green"
+ *                     bottom: "blue"
+ *                     accessory: "yellow"
+ *             screenOnly:
+ *               summary: 화면 설정만 업데이트
+ *               value:
+ *                 guestUserId: "550e8400-e29b-41d4-a716-446655440001"
+ *                 screenSetup: true
+ *             both:
+ *               summary: 캐릭터와 화면 설정 모두 업데이트
+ *               value:
+ *                 guestUserId: "550e8400-e29b-41d4-a716-446655440001"
+ *                 characterSetup:
+ *                   selectedOptions:
+ *                     face: "face1"
+ *                     hair: "hair2"
+ *                     top: "top1"
+ *                     bottom: "bottom2"
+ *                     accessory: "accessories2"
+ *                   selectedColors:
+ *                     face: "tan"
+ *                     hair: "black"
+ *                     top: "blue"
+ *                     bottom: "black"
+ *                     accessory: "gold"
+ *                 screenSetup: true
  *     responses:
  *       200:
  *         description: 준비 상태 업데이트 성공
@@ -967,11 +1046,71 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
  *                       type: object
  *                       properties:
  *                         characterSetup:
- *                           type: boolean
- *                           example: true
+ *                           type: object
+ *                           description: 업데이트된 캐릭터 설정
+ *                           properties:
+ *                             selectedOptions:
+ *                               type: object
+ *                               properties:
+ *                                 face:
+ *                                   type: string
+ *                                   example: "face2"
+ *                                 hair:
+ *                                   type: string
+ *                                   example: "hair1"
+ *                                 top:
+ *                                   type: string
+ *                                   example: "top2"
+ *                                 bottom:
+ *                                   type: string
+ *                                   example: "bottom3"
+ *                                 accessory:
+ *                                   type: string
+ *                                   example: "accessories1"
+ *                             selectedColors:
+ *                               type: object
+ *                               properties:
+ *                                 face:
+ *                                   type: string
+ *                                   example: "beige"
+ *                                 hair:
+ *                                   type: string
+ *                                   example: "red"
+ *                                 top:
+ *                                   type: string
+ *                                   example: "green"
+ *                                 bottom:
+ *                                   type: string
+ *                                   example: "blue"
+ *                                 accessory:
+ *                                   type: string
+ *                                   example: "yellow"
  *                         screenSetup:
  *                           type: boolean
  *                           example: false
+ *             examples:
+ *               success:
+ *                 summary: 성공 응답 예시
+ *                 value:
+ *                   resultType: "SUCCESS"
+ *                   error: null
+ *                   success:
+ *                     message: "준비 상태가 업데이트되었습니다."
+ *                     preparationStatus:
+ *                       characterSetup:
+ *                         selectedOptions:
+ *                           face: "face2"
+ *                           hair: "hair1"
+ *                           top: "top2"
+ *                           bottom: "bottom3"
+ *                           accessory: "accessories1"
+ *                         selectedColors:
+ *                           face: "beige"
+ *                           hair: "red"
+ *                           top: "green"
+ *                           bottom: "blue"
+ *                           accessory: "yellow"
+ *                       screenSetup: false
  *       400:
  *         description: 잘못된 요청
  *         content:
