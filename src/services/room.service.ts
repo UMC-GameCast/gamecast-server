@@ -22,7 +22,27 @@ interface RoomWithParticipants extends Room {
     nickname: string;
     role: string;
     joinedAt: Date;
-    preparationStatus: any;
+    preparationStatus: {
+      characterSetup: boolean;
+      screenSetup: boolean;
+    };
+    characterInfo: {
+      selectedOptions: {
+        face: string;
+        hair: string;
+        top: string;
+        bottom: string;
+        accessory: string;
+      } | null;
+      selectedColors: {
+        face: string;
+        hair: string;
+        top: string;
+        bottom: string;
+        accessory: string;
+      } | null;
+      isCustomized: boolean;
+    } | null;
   }>;
   hostGuest: {
     nickname: string;
@@ -290,14 +310,27 @@ export class RoomService {
       throw new NotFoundError('존재하지 않는 입장코드입니다.');
     }
 
-    // 응답 형태 변환
-    const participants = room.participants.map(p => ({
-      guestUserId: p.guestUser.id,
-      nickname: p.guestUser.nickname,
-      role: p.role,
-      joinedAt: p.joinedAt,
-      preparationStatus: p.preparationStatus
-    }));
+    // 응답 형태 변환 - 캐릭터 정보 포함
+    const participants = room.participants.map(p => {
+      const status = p.preparationStatus as any;
+      const characterInfo = status?.characterSetup || null;
+      
+      return {
+        guestUserId: p.guestUser.id,
+        nickname: p.guestUser.nickname,
+        role: p.role,
+        joinedAt: p.joinedAt,
+        preparationStatus: {
+          characterSetup: status?.characterSetup || false,
+          screenSetup: status?.screenSetup || false
+        },
+        characterInfo: characterInfo ? {
+          selectedOptions: characterInfo.selectedOptions || null,
+          selectedColors: characterInfo.selectedColors || null,
+          isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+        } : null
+      };
+    });
 
     return {
       ...room,
@@ -449,15 +482,28 @@ export class RoomService {
         }
       });
 
-      const participantInfo = updatedParticipants.map(p => ({
-        id: p.id,
-        guestUserId: p.guestUserId,
-        nickname: p.guestUser.nickname,
-        role: p.role,
-        joinedAt: p.joinedAt,
-        preparationStatus: p.preparationStatus,
-        isHost: room.hostGuestId === p.guestUserId
-      }));
+      const participantInfo = updatedParticipants.map(p => {
+        const status = p.preparationStatus as any;
+        const characterInfo = status?.characterSetup || null;
+        
+        return {
+          id: p.id,
+          guestUserId: p.guestUserId,
+          nickname: p.guestUser.nickname,
+          role: p.role,
+          joinedAt: p.joinedAt,
+          preparationStatus: {
+            characterSetup: status?.characterSetup || false,
+            screenSetup: status?.screenSetup || false
+          },
+          characterInfo: characterInfo ? {
+            selectedOptions: characterInfo.selectedOptions || null,
+            selectedColors: characterInfo.selectedColors || null,
+            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+          } : null,
+          isHost: room.hostGuestId === p.guestUserId
+        };
+      });
 
       // 9. Socket.IO를 통해 방의 모든 참여자에게 업데이트 알림
       if (this.webrtcService) {
@@ -536,13 +582,26 @@ export class RoomService {
 
     const roomsWithParticipants = rooms.map(room => ({
       ...room,
-      participants: room.participants.map(participant => ({
-        guestUserId: participant.guestUserId,
-        nickname: participant.guestUser.nickname,
-        role: participant.role,
-        joinedAt: participant.joinedAt,
-        preparationStatus: participant.preparationStatus
-      }))
+      participants: room.participants.map(participant => {
+        const status = participant.preparationStatus as any;
+        const characterInfo = status?.characterSetup || null;
+        
+        return {
+          guestUserId: participant.guestUserId,
+          nickname: participant.guestUser.nickname,
+          role: participant.role,
+          joinedAt: participant.joinedAt,
+          preparationStatus: {
+            characterSetup: status?.characterSetup || false,
+            screenSetup: status?.screenSetup || false
+          },
+          characterInfo: characterInfo ? {
+            selectedOptions: characterInfo.selectedOptions || null,
+            selectedColors: characterInfo.selectedColors || null,
+            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+          } : null
+        };
+      })
     }));
 
     return {
@@ -748,15 +807,28 @@ export class RoomService {
         }
       });
 
-      const participantInfo = remainingParticipants.map(p => ({
-        id: p.id,
-        guestUserId: p.guestUserId,
-        nickname: p.guestUser.nickname,
-        role: p.role,
-        joinedAt: p.joinedAt,
-        preparationStatus: p.preparationStatus,
-        isHost: participant.room.hostGuestId === p.guestUserId
-      }));
+      const participantInfo = remainingParticipants.map(p => {
+        const status = p.preparationStatus as any;
+        const characterInfo = status?.characterSetup || null;
+        
+        return {
+          id: p.id,
+          guestUserId: p.guestUserId,
+          nickname: p.guestUser.nickname,
+          role: p.role,
+          joinedAt: p.joinedAt,
+          preparationStatus: {
+            characterSetup: status?.characterSetup || false,
+            screenSetup: status?.screenSetup || false
+          },
+          characterInfo: characterInfo ? {
+            selectedOptions: characterInfo.selectedOptions || null,
+            selectedColors: characterInfo.selectedColors || null,
+            isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+          } : null,
+          isHost: participant.room.hostGuestId === p.guestUserId
+        };
+      });
 
       // 5. Socket.IO를 통해 방의 모든 참여자에게 업데이트 알림
       if (this.webrtcService) {
