@@ -241,7 +241,7 @@ router.get('/stats', (req: Request, res: Response) => {
  *     
  *     RoomUser:
  *       type: object
- *       description: 방 참여자 정보
+ *       description: 방 참여자 정보 (캐릭터 정보 포함)
  *       properties:
  *         socketId:
  *           type: string
@@ -260,6 +260,65 @@ router.get('/stats', (req: Request, res: Response) => {
  *           type: string
  *           format: date-time
  *           example: "2025-08-05T10:30:00.000Z"
+ *         preparationStatus:
+ *           type: object
+ *           description: "준비 상태 정보"
+ *           properties:
+ *             characterSetup:
+ *               type: boolean
+ *               example: true
+ *             screenSetup:
+ *               type: boolean
+ *               example: false
+ *         characterInfo:
+ *           type: object
+ *           nullable: true
+ *           description: "캐릭터 커스터마이징 정보"
+ *           properties:
+ *             selectedOptions:
+ *               type: object
+ *               nullable: true
+ *               description: "캐릭터 선택 옵션"
+ *               properties:
+ *                 face:
+ *                   type: string
+ *                   example: "face2"
+ *                 hair:
+ *                   type: string
+ *                   example: "hair1"
+ *                 top:
+ *                   type: string
+ *                   example: "top2"
+ *                 bottom:
+ *                   type: string
+ *                   example: "bottom3"
+ *                 accessory:
+ *                   type: string
+ *                   example: "accessories1"
+ *             selectedColors:
+ *               type: object
+ *               nullable: true
+ *               description: "캐릭터 색상 설정"
+ *               properties:
+ *                 face:
+ *                   type: string
+ *                   example: "beige"
+ *                 hair:
+ *                   type: string
+ *                   example: "red"
+ *                 top:
+ *                   type: string
+ *                   example: "green"
+ *                 bottom:
+ *                   type: string
+ *                   example: "blue"
+ *                 accessory:
+ *                   type: string
+ *                   example: "yellow"
+ *             isCustomized:
+ *               type: boolean
+ *               example: true
+ *               description: "캐릭터 커스터마이징 완료 여부"
  *     
  *     # WebRTC 시그널링 이벤트
  *     WebRTCOffer:
@@ -540,6 +599,65 @@ router.get('/stats', (req: Request, res: Response) => {
  *           type: string
  *           example: "INSUFFICIENT_PERMISSION"
  *           description: "오류 코드 (선택사항)"
+ *     
+ *     # 참여자 입장/퇴장 이벤트
+ *     UserJoinedEvent:
+ *       type: object
+ *       description: 새 사용자 참여 알림 (캐릭터 정보 포함)
+ *       allOf:
+ *         - $ref: "#/components/schemas/RoomUser"
+ *       example:
+ *         socketId: "socket_456"
+ *         guestUserId: "550e8400-e29b-41d4-a716-446655440002"
+ *         nickname: "새참여자"
+ *         isHost: false
+ *         joinedAt: "2025-08-05T10:35:00.000Z"
+ *         preparationStatus:
+ *           characterSetup: false
+ *           screenSetup: false
+ *         characterInfo:
+ *           selectedOptions:
+ *             face: "face1"
+ *             hair: "hair2"
+ *             top: "top1"
+ *             bottom: "bottom2"
+ *             accessory: "accessories1"
+ *           selectedColors:
+ *             face: "peach"
+ *             hair: "brown"
+ *             top: "blue"
+ *             bottom: "black"
+ *             accessory: "silver"
+ *           isCustomized: true
+ *     
+ *     UserLeftEvent:
+ *       type: object
+ *       description: 사용자 퇴장 알림 (캐릭터 정보 포함)
+ *       allOf:
+ *         - $ref: "#/components/schemas/RoomUser"
+ *       example:
+ *         socketId: "socket_789"
+ *         guestUserId: "550e8400-e29b-41d4-a716-446655440003"
+ *         nickname: "퇴장자"
+ *         isHost: false
+ *         joinedAt: "2025-08-05T10:30:00.000Z"
+ *         preparationStatus:
+ *           characterSetup: true
+ *           screenSetup: true
+ *         characterInfo:
+ *           selectedOptions:
+ *             face: "face3"
+ *             hair: "hair1"
+ *             top: "top3"
+ *             bottom: "bottom1"
+ *             accessory: "accessories2"
+ *           selectedColors:
+ *             face: "tan"
+ *             hair: "blonde"
+ *             top: "red"
+ *             bottom: "white"
+ *             accessory: "gold"
+ *           isCustomized: true
  *     
  *     RecordingErrorEvent:
  *       type: object
