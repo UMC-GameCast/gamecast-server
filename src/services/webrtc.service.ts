@@ -60,6 +60,11 @@ export class WebRTCService {
   private io: SocketIOServer;
   private rooms: Map<string, Map<string, RoomUser>> = new Map();
   private roomService: any; // 방 서비스 인스턴스
+  
+  // Socket ID 매핑을 위한 추가 맵
+  private socketToRoom = new Map<string, string>();
+  private socketToUser = new Map<string, string>();
+  private userToSocket = new Map<string, string>();
 
   constructor(server: HTTPServer) {
     this.io = new SocketIOServer(server, {
@@ -119,9 +124,29 @@ export class WebRTCService {
         this.handlePreparationStatusUpdate(socket, data);
       });
 
+      // 준비 상태 실시간 업데이트 (클라이언트용)
+      socket.on('preparation-status-update', (data: { guestUserId: string; preparationStatus: any }) => {
+        this.handlePreparationStatusRealtime(socket, data);
+      });
+
       // 최종 준비 완료 (레디 버튼)
       socket.on('ready-to-start', () => {
         this.handleReadyToStart(socket);
+      });
+
+      // 녹화 시작 (방장 전용)
+      socket.on('host-start-recording', (data: { roomCode: string }) => {
+        this.handleHostStartRecording(socket, data);
+      });
+
+      // 녹화 종료 (방장 전용)
+      socket.on('host-stop-recording', (data: { roomCode: string }) => {
+        this.handleHostStopRecording(socket, data);
+      });
+
+      // 방장 방 나가기
+      socket.on('host-leave-room', () => {
+        this.handleHostLeaveRoom(socket);
       });
 
       // 캐릭터 상태 업데이트
@@ -226,6 +251,11 @@ export class WebRTCService {
       (socket as any).guestUserId = guestUserId;
       (socket as any).nickname = nickname;
 
+      // Socket ID 매핑 저장
+      this.socketToRoom.set(socket.id, roomCode);
+      this.socketToUser.set(socket.id, guestUserId);
+      this.userToSocket.set(guestUserId, socket.id);
+
       // 방별 사용자 관리
       if (!this.rooms.has(roomCode)) {
         this.rooms.set(roomCode, new Map());
@@ -240,42 +270,37 @@ export class WebRTCService {
         isHost
       });
 
-      // 현재 방 참여자들에게 새 참여자 알림 (캐릭터 정보 포함)
-      const guestUser = await prisma.guestUser.findUnique({
-        where: { id: guestUserId },
-        include: { 
-          characters: {
-            where: { roomId: room.id },
-            include: {
-              customizations: {
-                include: { component: true }
-              }
-            }
-          }
-        }
-      });
-
-      const newParticipantWithCharacter = await this.roomService.formatParticipantData({
-        id: guestUserId,
-        nickname,
+      // 다른 참여자들에게 새 참여자 알림 (클라이언트 기대 형식)
+      socket.to(roomCode).emit('user-joined', {
         socketId: socket.id,
-        joinedAt: new Date(),
-        room: { code: roomCode } as any,
-        user: null, // GuestUser는 User 모델과 직접 연결되지 않음
-        characters: guestUser?.characters || []
+        guestUserId,
+        nickname,
+        joinedAt: new Date()
       });
 
-      socket.to(roomCode).emit('user-joined', newParticipantWithCharacter);
+      // 현재 방 참여자 목록 생성 (Socket ID 포함)
+      const roomUsers = Array.from(this.rooms.get(roomCode)?.values() || []).map(user => ({
+        socketId: user.socketId,
+        guestUserId: user.guestUserId,
+        nickname: user.nickname,
+        isHost: user.isHost,
+        joinedAt: user.joinedAt,
+        isConnected: true,
+        hasWebRTCConnection: true,
+        preparationStatus: {
+          characterSetup: false,
+          screenSetup: false,
+          isReady: false
+        },
+        characterInfo: null
+      }));
 
-      // 현재 방 참여자 목록 전송 (캐릭터 정보 포함)
-      const roomUsers = await this.getRoomUsersWithCharacterInfo(roomCode);
-      socket.emit('room-users', roomUsers);
-
-      // 방 참여 성공 알림
+      // 방 참여 성공 알림 (클라이언트 기대 형식)
       socket.emit('joined-room-success', {
         roomCode,
         roomId: room.id,
-        users: roomUsers
+        users: roomUsers,
+        userCount: roomUsers.length
       });
 
       // 음성 세션 생성 또는 참여
@@ -651,7 +676,27 @@ export class WebRTCService {
   }
 
   private handleDisconnect(socket: Socket) {
-    logger.info(`WebSocket 연결 해제: ${socket.id}`);
+    const roomCode = this.socketToRoom.get(socket.id);
+    const guestUserId = this.socketToUser.get(socket.id);
+    
+    logger.info(`WebSocket 연결 해제: ${socket.id}`, { roomCode, guestUserId });
+    
+    // Socket ID 매핑 정리
+    this.socketToRoom.delete(socket.id);
+    this.socketToUser.delete(socket.id);
+    if (guestUserId) {
+      this.userToSocket.delete(guestUserId);
+    }
+    
+    // 다른 참여자들에게 사용자 퇴장 알림
+    if (roomCode && guestUserId) {
+      socket.to(roomCode).emit('user-left', {
+        socketId: socket.id,
+        guestUserId,
+        nickname: (socket as any).nickname || 'User'
+      });
+    }
+    
     this.handleLeaveRoom(socket);
   }
 
@@ -1237,6 +1282,258 @@ export class WebRTCService {
         logger.error('방 상태 복구 실패:', rollbackError);
       });
     }
+  }
+
+  /**
+   * 준비 상태 실시간 업데이트 핸들러 (클라이언트용)
+   */
+  private async handlePreparationStatusRealtime(socket: Socket, data: { guestUserId: string; preparationStatus: any }) {
+    try {
+      const roomCode = this.socketToRoom.get(socket.id);
+      if (!roomCode) {
+        socket.emit('error', { message: '방 정보를 찾을 수 없습니다.' });
+        return;
+      }
+
+      // 다른 참여자들에게 준비 상태 변경 알림
+      socket.to(roomCode).emit('participant-preparation-updated', {
+        guestUserId: data.guestUserId,
+        preparationStatus: data.preparationStatus,
+        socketId: socket.id
+      });
+
+      // 모든 플레이어가 준비 완료되었는지 확인
+      await this.checkAllPlayersReadyAndNotify(roomCode);
+
+      logger.info('준비 상태 실시간 업데이트', { 
+        guestUserId: data.guestUserId, 
+        roomCode, 
+        preparationStatus: data.preparationStatus 
+      });
+
+    } catch (error) {
+      logger.error('준비 상태 실시간 업데이트 오류:', error);
+      socket.emit('error', { message: '준비 상태 업데이트 중 오류가 발생했습니다.' });
+    }
+  }
+
+  /**
+   * 방장 녹화 시작
+   */
+  private async handleHostStartRecording(socket: Socket, data: { roomCode: string }) {
+    try {
+      const guestUserId = this.socketToUser.get(socket.id);
+      const roomCode = data.roomCode;
+
+      // 방장 권한 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode, hostGuest: { id: guestUserId } }
+      });
+
+      if (!room) {
+        socket.emit('error', { message: '방장 권한이 없습니다.' });
+        return;
+      }
+
+      // 방 상태를 recording으로 변경
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.recording }
+      });
+
+      // 방의 모든 참여자에게 녹화 시작 알림
+      this.io.to(roomCode).emit('recording-started', {
+        startedBy: guestUserId,
+        timestamp: new Date(),
+        roomCode
+      });
+
+      logger.info(`방장 녹화 시작: ${roomCode}`, { hostId: guestUserId });
+
+    } catch (error) {
+      logger.error('방장 녹화 시작 오류:', error);
+      socket.emit('error', { message: '녹화 시작에 실패했습니다.' });
+    }
+  }
+
+  /**
+   * 방장 녹화 종료
+   */
+  private async handleHostStopRecording(socket: Socket, data: { roomCode: string }) {
+    try {
+      const guestUserId = this.socketToUser.get(socket.id);
+      const roomCode = data.roomCode;
+
+      // 방장 권한 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode, hostGuest: { id: guestUserId } }
+      });
+
+      if (!room) {
+        socket.emit('error', { message: '방장 권한이 없습니다.' });
+        return;
+      }
+
+      // 방 상태를 processing으로 변경
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.processing }
+      });
+
+      // 방의 모든 참여자에게 녹화 종료 알림
+      this.io.to(roomCode).emit('recording-stopped', {
+        stoppedBy: guestUserId,
+        timestamp: new Date(),
+        roomCode
+      });
+
+      logger.info(`방장 녹화 종료: ${roomCode}`, { hostId: guestUserId });
+
+    } catch (error) {
+      logger.error('방장 녹화 종료 오류:', error);
+      socket.emit('error', { message: '녹화 종료에 실패했습니다.' });
+    }
+  }
+
+  /**
+   * 방장 방 나가기 (방 해체)
+   */
+  private async handleHostLeaveRoom(socket: Socket) {
+    try {
+      const guestUserId = this.socketToUser.get(socket.id);
+      const roomCode = this.socketToRoom.get(socket.id);
+
+      if (!roomCode || !guestUserId) {
+        return;
+      }
+
+      // 방장 권한 확인
+      const room = await prisma.room.findFirst({
+        where: { roomCode, hostGuest: { id: guestUserId } }
+      });
+
+      if (!room) {
+        return; // 방장이 아니면 일반 퇴장 처리
+      }
+
+      // 모든 참여자 비활성화
+      await prisma.roomParticipant.updateMany({
+        where: { roomId: room.id },
+        data: { isActive: false }
+      });
+
+      // 방 상태 변경
+      await prisma.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.expired }
+      });
+
+      // 모든 참여자에게 방 해체 알림
+      this.io.to(roomCode).emit('room-dissolved', {
+        reason: 'HOST_LEFT',
+        message: '방장이 나가서 방이 종료되었습니다.',
+        timestamp: new Date(),
+        roomCode
+      });
+
+      // 모든 소켓을 방에서 제거
+      this.io.in(roomCode).socketsLeave(roomCode);
+      this.rooms.delete(roomCode);
+
+      // 매핑 정리
+      Array.from(this.socketToRoom.entries()).forEach(([socketId, rCode]) => {
+        if (rCode === roomCode) {
+          const userId = this.socketToUser.get(socketId);
+          this.socketToRoom.delete(socketId);
+          this.socketToUser.delete(socketId);
+          if (userId) {
+            this.userToSocket.delete(userId);
+          }
+        }
+      });
+
+      logger.info(`방 해체: ${roomCode} (방장 퇴장)`, { hostId: guestUserId });
+
+    } catch (error) {
+      logger.error('방장 방 나가기 처리 오류:', error);
+    }
+  }
+
+  /**
+   * 모든 플레이어 준비 완료 확인 및 자동 녹화 시작
+   */
+  private async checkAllPlayersReadyAndNotify(roomCode: string) {
+    try {
+      // 방 정보 조회
+      const room = await prisma.room.findFirst({
+        where: { roomCode },
+        include: {
+          participants: {
+            where: { isActive: true }
+          }
+        }
+      });
+
+      if (!room || room.participants.length < 2) {
+        return;
+      }
+
+      // 모든 참여자의 준비 상태 확인
+      const allReady = room.participants.every(participant => {
+        const status = participant.preparationStatus as any;
+        return status && status.isReady === true;
+      });
+
+      if (allReady) {
+        // 모든 플레이어 준비 완료 알림
+        this.io.to(roomCode).emit('all-players-ready', {
+          countdown: 3,
+          startRecordingIn: 3000,
+          readyPlayers: room.participants.length
+        });
+
+        // 3초 후 자동 녹화 시작
+        setTimeout(async () => {
+          try {
+            await prisma.room.update({
+              where: { roomCode },
+              data: { roomState: RoomState.recording }
+            });
+
+            this.io.to(roomCode).emit('recording-started', {
+              autoStart: true,
+              startedBy: 'SYSTEM',
+              timestamp: new Date()
+            });
+
+            logger.info(`자동 녹화 시작: ${roomCode}`);
+          } catch (error) {
+            logger.error('자동 녹화 시작 오류:', error);
+          }
+        }, 3000);
+
+        logger.info(`모든 플레이어 준비 완료: ${roomCode}`);
+      }
+
+    } catch (error) {
+      logger.error('준비 상태 확인 오류:', error);
+    }
+  }
+
+  /**
+   * Socket ID 헬퍼 메서드들 (외부에서 사용)
+   */
+  public getSocketIdByGuestUserId(guestUserId: string): string | null {
+    return this.userToSocket.get(guestUserId) || null;
+  }
+
+  public getRoomCodeBySocketId(socketId: string): string | null {
+    return this.socketToRoom.get(socketId) || null;
+  }
+
+  public getRoomSockets(roomCode: string): string[] {
+    const roomUsers = this.rooms.get(roomCode);
+    return roomUsers ? Array.from(roomUsers.keys()) : [];
   }
 
   public getIO(): SocketIOServer {
