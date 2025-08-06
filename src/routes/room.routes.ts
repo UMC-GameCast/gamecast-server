@@ -3,11 +3,11 @@ import { RoomController } from '../controllers/room.controller.js';
 import { validateRequest } from '../middlewares/validation.middleware.js';
 import { createRoomSchema, joinRoomSchema, updatePreparationSchema } from '../validators/room.validator.js';
 import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware.js';
-import { WebRTCService } from '../services/webrtc.service.js';
+import { GameSocketService } from '../services/game-socket.service.js';
 
-export function createRoomRoutes(webrtcService: WebRTCService) {
+export function createRoomRoutes(gameSocketService: GameSocketService) {
   const router = express.Router();
-  const roomController = new RoomController(webrtcService);
+  const roomController = new RoomController(gameSocketService);
   
 
 /**

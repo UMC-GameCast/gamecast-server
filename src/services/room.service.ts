@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError, NotFoundError, ConflictError } from '../errors/errors.js';
 import type { WebRTCService } from './webrtc.service.js';
 import logger from '../logger.js';
+import { PreparationStatus, PreparationStatusUpdate, ReadyCheckResult } from '../types/preparation.types.js';
 
 const prisma = new PrismaClient();
 
@@ -733,63 +734,6 @@ export class RoomService {
     });
   }
 
-  /**
-   * 준비 상태 업데이트
-   */
-  async updatePreparationStatus(
-    guestUserId: string, 
-    preparationStatus: Record<string, any>
-  ): Promise<Record<string, any>> {
-    const participant = await prisma.roomParticipant.findFirst({
-      where: {
-        guestUserId: guestUserId,
-        isActive: true
-      },
-      include: {
-        room: true,
-        guestUser: true
-      }
-    });
-
-    if (!participant) {
-      throw new NotFoundError('참여자를 찾을 수 없습니다.');
-    }
-
-    const currentStatus = participant.preparationStatus as Record<string, any> || {};
-    const updatedStatus = { ...currentStatus, ...preparationStatus };
-
-    await prisma.roomParticipant.update({
-      where: {
-        id: participant.id
-      },
-      data: {
-        preparationStatus: updatedStatus
-      }
-    });
-
-    // Socket.IO를 통해 방의 모든 참여자에게 알림
-    if (this.webrtcService && participant.room) {
-      try {
-        this.webrtcService.getIO().to(participant.room.roomCode).emit('preparation-status-updated', {
-          guestUserId,
-          nickname: participant.guestUser.nickname,
-          preparationStatus: updatedStatus,
-          updatedAt: new Date()
-        });
-
-        logger.info('준비 상태 업데이트 브로드캐스트 완료', {
-          guestUserId,
-          roomCode: participant.room.roomCode,
-          preparationStatus: updatedStatus
-        });
-      } catch (broadcastError) {
-        logger.error('준비 상태 브로드캐스트 실패:', broadcastError);
-        // 브로드캐스트 실패해도 DB 업데이트는 성공으로 처리
-      }
-    }
-
-    return updatedStatus;
-  }
 
   /**
    * 방 나가기
@@ -1002,6 +946,320 @@ export class RoomService {
         roomName: room.roomName,
         oldState,
         newState
+      };
+    });
+  }
+
+  /**
+   * 준비 상태 업데이트 (Boolean 기반)
+   */
+  async updatePreparationStatus(
+    guestUserId: string, 
+    updateData: PreparationStatusUpdate
+  ): Promise<PreparationStatus> {
+    return await prisma.$transaction(async (tx) => {
+      // 현재 참여자 정보 조회
+      const participant = await tx.roomParticipant.findFirst({
+        where: {
+          guestUserId,
+          isActive: true
+        }
+      });
+
+      if (!participant) {
+        throw new NotFoundError('활성화된 참여자를 찾을 수 없습니다.');
+      }
+
+      // 현재 준비 상태 가져오기 (기본값 설정)
+      const currentStatus = (participant.preparationStatus as unknown as PreparationStatus) || {
+        characterReady: false,
+        screenReady: false,
+        finalReady: false
+      };
+
+      // 업데이트할 상태 병합
+      const newStatus: PreparationStatus = {
+        characterReady: updateData.characterReady ?? currentStatus.characterReady,
+        screenReady: updateData.screenReady ?? currentStatus.screenReady,
+        finalReady: updateData.finalReady ?? currentStatus.finalReady
+      };
+
+      // DB 업데이트
+      await tx.roomParticipant.update({
+        where: { id: participant.id },
+        data: {
+          preparationStatus: newStatus as any
+        }
+      });
+
+      // 캐릭터 정보가 포함된 경우 별도 저장 (선택적)
+      if (updateData.characterInfo) {
+        // 캐릭터 정보는 별도 테이블이나 JSON 필드에 저장 가능
+        // 현재는 preparationStatus와 분리하여 관리
+        logger.info('캐릭터 정보 업데이트', { 
+          guestUserId, 
+          characterInfo: updateData.characterInfo 
+        });
+      }
+
+      logger.info('준비 상태 업데이트 완료', {
+        guestUserId,
+        oldStatus: currentStatus,
+        newStatus,
+        updateData
+      });
+
+      return newStatus;
+    });
+  }
+
+  /**
+   * 모든 플레이어 준비 상태 확인
+   */
+  async checkAllPlayersReady(roomCode: string): Promise<{
+    roomCode: string;
+    allReady: boolean;
+    readyCount: number;
+    totalCount: number;
+    participants: ReadyCheckResult[];
+  }> {
+    const room = await prisma.room.findFirst({
+      where: {
+        roomCode,
+        roomState: {
+          in: [RoomState.waiting, RoomState.active]
+        }
+      },
+      include: {
+        participants: {
+          where: { isActive: true },
+          include: { guestUser: true }
+        }
+      }
+    });
+
+    if (!room) {
+      throw new NotFoundError('방을 찾을 수 없습니다.');
+    }
+
+    const participants: ReadyCheckResult[] = room.participants.map(participant => {
+      const status = (participant.preparationStatus as unknown as PreparationStatus) || {
+        characterReady: false,
+        screenReady: false,
+        finalReady: false
+      };
+
+      const isFullyReady = status.characterReady && status.screenReady && status.finalReady;
+
+      return {
+        guestUserId: participant.guestUserId,
+        nickname: participant.guestUser.nickname,
+        characterReady: status.characterReady,
+        screenReady: status.screenReady,
+        finalReady: status.finalReady,
+        isFullyReady
+      };
+    });
+
+    const readyCount = participants.filter(p => p.isFullyReady).length;
+    const allReady = readyCount === participants.length && participants.length >= 2;
+
+    return {
+      roomCode,
+      allReady,
+      readyCount,
+      totalCount: participants.length,
+      participants
+    };
+  }
+
+  /**
+   * 녹화 시작 (방장 전용)
+   */
+  async startRecording(roomCode: string, hostGuestId: string): Promise<{
+    sessionId: string;
+    roomCode: string;
+    message: string;
+  }> {
+    return await prisma.$transaction(async (tx) => {
+      // 방장 권한 확인
+      const room = await tx.room.findFirst({
+        where: {
+          roomCode,
+          hostGuestId: hostGuestId
+        },
+        include: {
+          participants: {
+            where: { isActive: true }
+          }
+        }
+      });
+
+      if (!room) {
+        throw new NotFoundError('방장 권한이 없거나 존재하지 않는 방입니다.');
+      }
+
+      if (room.roomState === RoomState.recording) {
+        throw new ConflictError('이미 녹화가 진행 중입니다.');
+      }
+
+      // 모든 참여자 준비 완료 확인 (단순한 Boolean 체크)
+      const allReady = room.participants.every(participant => {
+        const status = (participant.preparationStatus as unknown as PreparationStatus) || {
+          characterReady: false,
+          screenReady: false,
+          finalReady: false
+        };
+        return status.characterReady && status.screenReady && status.finalReady;
+      });
+
+      if (!allReady) {
+        throw new ConflictError('아직 준비되지 않은 참여자가 있습니다.');
+      }
+
+      // 방 상태를 recording으로 변경
+      await tx.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.recording }
+      });
+
+      // 녹화 세션 생성
+      const recordingSession = await tx.recordingSession.create({
+        data: {
+          roomId: room.id,
+          sessionName: `${roomCode} 녹화 세션`,
+          recordingSettings: {
+            quality: '1080p',
+            format: 'webm',
+            startedByHost: true
+          },
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24시간 후
+        }
+      });
+
+      return {
+        sessionId: recordingSession.id,
+        roomCode,
+        message: '녹화가 시작되었습니다.'
+      };
+    });
+  }
+
+  /**
+   * 녹화 종료 (방장 전용)
+   */
+  async stopRecording(roomCode: string, hostGuestId: string): Promise<{
+    sessionId: string;
+    roomCode: string;
+    message: string;
+  }> {
+    return await prisma.$transaction(async (tx) => {
+      // 방장 권한 확인
+      const room = await tx.room.findFirst({
+        where: {
+          roomCode,
+          hostGuestId: hostGuestId
+        }
+      });
+
+      if (!room) {
+        throw new NotFoundError('방장 권한이 없거나 존재하지 않는 방입니다.');
+      }
+
+      if (room.roomState !== RoomState.recording) {
+        throw new ConflictError('녹화가 진행 중이지 않습니다.');
+      }
+
+      // 가장 최근 녹화 세션 종료
+      const recordingSession = await tx.recordingSession.findFirst({
+        where: {
+          roomId: room.id,
+          status: 'recording'
+        },
+        orderBy: {
+          startedAt: 'desc'
+        }
+      });
+
+      if (!recordingSession) {
+        throw new NotFoundError('진행 중인 녹화를 찾을 수 없습니다.');
+      }
+
+      await tx.recordingSession.update({
+        where: { id: recordingSession.id },
+        data: {
+          endedAt: new Date(),
+          status: 'processing'
+        }
+      });
+
+      // 방 상태를 processing으로 변경
+      await tx.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.processing }
+      });
+
+      return {
+        sessionId: recordingSession.id,
+        roomCode,
+        message: '녹화가 종료되었습니다.'
+      };
+    });
+  }
+
+  /**
+   * 방장 나가기 처리 (방 해체)
+   */
+  async hostLeaveRoom(roomCode: string, hostGuestId: string): Promise<{
+    roomCode: string;
+    message: string;
+    participantCount: number;
+  }> {
+    return await prisma.$transaction(async (tx) => {
+      // 방장 권한 확인
+      const room = await tx.room.findFirst({
+        where: {
+          roomCode,
+          hostGuestId: hostGuestId
+        },
+        include: {
+          participants: {
+            where: { isActive: true }
+          }
+        }
+      });
+
+      if (!room) {
+        throw new NotFoundError('방장 권한이 없거나 존재하지 않는 방입니다.');
+      }
+
+      // 모든 참여자 비활성화
+      await tx.roomParticipant.updateMany({
+        where: { roomId: room.id },
+        data: { isActive: false }
+      });
+
+      // 방 상태 변경
+      await tx.room.update({
+        where: { roomCode },
+        data: { roomState: RoomState.expired }
+      });
+
+      // 진행 중인 음성 세션 종료
+      await tx.voiceSession.updateMany({
+        where: {
+          roomId: room.id,
+          endedAt: null
+        },
+        data: {
+          endedAt: new Date()
+        }
+      });
+
+      return {
+        roomCode,
+        message: '방장이 나가서 방이 종료되었습니다.',
+        participantCount: room.participants.length
       };
     });
   }
