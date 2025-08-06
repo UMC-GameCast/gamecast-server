@@ -7,9 +7,11 @@ import { WebRTCService } from '../services/webrtc.service.js';
 
 export class RoomController {
   private roomService: RoomService;
+  private webrtcService?: WebRTCService;
 
   constructor(webrtcService?: WebRTCService) {
     this.roomService = new RoomService(webrtcService);
+    this.webrtcService = webrtcService;
   }
 
   /**
@@ -137,7 +139,7 @@ export class RoomController {
   }
 
   /**
-   * 방 정보 조회
+   * 방 정보 조회 (Socket ID 정보 포함)
    * GET /api/rooms/:roomCode
    */
   async getRoomInfo(req: Request, res: Response, next: NextFunction) {
@@ -150,6 +152,19 @@ export class RoomController {
       });
 
       const result = await this.roomService.getRoomByCode(roomCode);
+
+      // Socket ID 정보 추가
+      if (result.participants && this.webrtcService) {
+        result.participants = result.participants.map((participant: any) => {
+          const socketId = this.webrtcService?.getSocketIdByGuestUserId(participant.guestUserId);
+          return {
+            ...participant,
+            socketId: socketId || null,
+            isConnected: !!socketId,
+            hasWebRTCConnection: !!socketId
+          };
+        });
+      }
 
       const response = createSuccessResponse(result);
 
@@ -228,7 +243,26 @@ export class RoomController {
 
       const result = await this.roomService.updatePreparationStatus(guestUserId, preparationStatus);
 
-      const response = createSuccessResponse({ preparationStatus: result });
+      // Socket.IO로 실시간 준비 상태 업데이트 전송
+      if (this.webrtcService) {
+        const socketId = this.webrtcService.getSocketIdByGuestUserId(guestUserId);
+        if (socketId) {
+          const roomCode = this.webrtcService.getRoomCodeBySocketId(socketId);
+          if (roomCode) {
+            const io = this.webrtcService.getIO();
+            io.to(roomCode).emit('participant-preparation-updated', {
+              guestUserId,
+              preparationStatus: result,
+              socketId
+            });
+          }
+        }
+      }
+
+      const response = createSuccessResponse({ 
+        preparationStatus: result,
+        message: '준비 상태가 업데이트되었습니다.'
+      });
 
       logger.info('준비 상태 업데이트 완료', { 
         guestUserId, 
@@ -368,6 +402,166 @@ export class RoomController {
       logger.error('모든 방 삭제 실패', {
         error: error instanceof Error ? error.message : '알 수 없는 오류',
         ip: req.ip
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * 모든 플레이어 준비 상태 확인
+   * GET /api/rooms/:roomCode/ready-status
+   */
+  async checkAllPlayersReady(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { roomCode } = req.params;
+
+      logger.info('준비 상태 확인 요청', { 
+        roomCode,
+        ip: req.ip 
+      });
+
+      const result = await this.roomService.checkAllPlayersReady(roomCode);
+
+      const response = createSuccessResponse(result);
+
+      res.json(response);
+    } catch (error) {
+      logger.error('준비 상태 확인 실패', { 
+        error: error instanceof Error ? error.message : '알 수 없는 오류',
+        roomCode: req.params.roomCode 
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * 녹화 시작 (방장 전용)
+   * POST /api/rooms/start-recording
+   */
+  async startRecording(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { roomCode, hostGuestId } = req.body;
+
+      if (!roomCode || !hostGuestId) {
+        throw new BadRequestError('방 코드와 방장 ID가 필요합니다.');
+      }
+
+      logger.info('녹화 시작 요청', { 
+        roomCode,
+        hostGuestId,
+        ip: req.ip 
+      });
+
+      // 방장 권한 확인
+      const result = await this.roomService.startRecording(roomCode, hostGuestId);
+
+      // Socket.IO로 모든 참여자에게 녹화 시작 알림
+      if (this.webrtcService) {
+        const io = this.webrtcService.getIO();
+        io.to(roomCode).emit('recording-started', {
+          startedBy: hostGuestId,
+          timestamp: new Date(),
+          roomCode
+        });
+      }
+
+      const response = createSuccessResponse(result);
+
+      res.json(response);
+    } catch (error) {
+      logger.error('녹화 시작 실패', { 
+        error: error instanceof Error ? error.message : '알 수 없는 오류',
+        body: req.body 
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * 녹화 종료 (방장 전용)
+   * POST /api/rooms/stop-recording
+   */
+  async stopRecording(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { roomCode, hostGuestId } = req.body;
+
+      if (!roomCode || !hostGuestId) {
+        throw new BadRequestError('방 코드와 방장 ID가 필요합니다.');
+      }
+
+      logger.info('녹화 종료 요청', { 
+        roomCode,
+        hostGuestId,
+        ip: req.ip 
+      });
+
+      // 방장 권한 확인 및 녹화 종료
+      const result = await this.roomService.stopRecording(roomCode, hostGuestId);
+
+      // Socket.IO로 모든 참여자에게 녹화 종료 알림
+      if (this.webrtcService) {
+        const io = this.webrtcService.getIO();
+        io.to(roomCode).emit('recording-stopped', {
+          stoppedBy: hostGuestId,
+          timestamp: new Date(),
+          roomCode
+        });
+      }
+
+      const response = createSuccessResponse(result);
+
+      res.json(response);
+    } catch (error) {
+      logger.error('녹화 종료 실패', { 
+        error: error instanceof Error ? error.message : '알 수 없는 오류',
+        body: req.body 
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * 방장 나가기 처리 (방 해체)
+   * POST /api/rooms/host-leave
+   */
+  async hostLeaveRoom(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { roomCode, hostGuestId } = req.body;
+
+      if (!roomCode || !hostGuestId) {
+        throw new BadRequestError('방 코드와 방장 ID가 필요합니다.');
+      }
+
+      logger.info('방장 나가기 요청', { 
+        roomCode,
+        hostGuestId,
+        ip: req.ip 
+      });
+
+      // 방장 권한 확인 및 방 해체
+      const result = await this.roomService.hostLeaveRoom(roomCode, hostGuestId);
+
+      // Socket.IO로 모든 참여자에게 방 해체 알림
+      if (this.webrtcService) {
+        const io = this.webrtcService.getIO();
+        io.to(roomCode).emit('room-dissolved', {
+          reason: 'HOST_LEFT',
+          message: '방장이 나가서 방이 종료되었습니다.',
+          timestamp: new Date(),
+          roomCode
+        });
+
+        // 모든 소켓을 방에서 제거
+        io.in(roomCode).socketsLeave(roomCode);
+      }
+
+      const response = createSuccessResponse(result);
+
+      res.json(response);
+    } catch (error) {
+      logger.error('방장 나가기 실패', { 
+        error: error instanceof Error ? error.message : '알 수 없는 오류',
+        body: req.body 
       });
       next(error);
     }

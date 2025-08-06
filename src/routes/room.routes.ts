@@ -1320,6 +1320,27 @@ export function createRoomRoutes(webrtcService: WebRTCService) {
     roomController.cleanupRooms.bind(roomController)
   );
 
+  // 새로운 게임 플로우 API들
+  router.get(
+    '/:roomCode/ready-status',
+    roomController.checkAllPlayersReady.bind(roomController)
+  );
+
+  router.post(
+    '/start-recording',
+    roomController.startRecording.bind(roomController)
+  );
+
+  router.post(
+    '/stop-recording',
+    roomController.stopRecording.bind(roomController)
+  );
+
+  router.post(
+    '/host-leave',
+    roomController.hostLeaveRoom.bind(roomController)
+  );
+
 /**
  * @swagger
  * components:
