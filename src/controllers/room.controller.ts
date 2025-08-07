@@ -3,15 +3,15 @@ import { RoomService } from '../services/room.service.js';
 import { BadRequestError } from '../errors/errors.js';
 import { createSuccessResponse } from '../utils/response.util.js';
 import logger from '../logger.js';
-import { WebRTCService } from '../services/webrtc.service.js';
+import { GameSocketService } from '../services/game-socket.service.js';
 
 export class RoomController {
   private roomService: RoomService;
-  private webrtcService?: WebRTCService;
+  private gameSocketService?: GameSocketService;
 
-  constructor(webrtcService?: WebRTCService) {
-    this.roomService = new RoomService(webrtcService);
-    this.webrtcService = webrtcService;
+  constructor(gameSocketService?: GameSocketService) {
+    this.roomService = new RoomService();
+    this.gameSocketService = gameSocketService;
   }
 
   /**
@@ -154,9 +154,9 @@ export class RoomController {
       const result = await this.roomService.getRoomByCode(roomCode);
 
       // Socket ID 정보 추가
-      if (result.participants && this.webrtcService) {
+      if (result.participants && this.gameSocketService) {
         result.participants = result.participants.map((participant: any) => {
-          const socketId = this.webrtcService?.getSocketIdByGuestUserId(participant.guestUserId);
+          const socketId = this.gameSocketService?.getSocketIdByGuestUserId(participant.guestUserId);
           return {
             ...participant,
             socketId: socketId || null,
@@ -244,12 +244,12 @@ export class RoomController {
       const result = await this.roomService.updatePreparationStatus(guestUserId, preparationStatus);
 
       // Socket.IO로 실시간 준비 상태 업데이트 전송
-      if (this.webrtcService) {
-        const socketId = this.webrtcService.getSocketIdByGuestUserId(guestUserId);
+      if (this.gameSocketService) {
+        const socketId = this.gameSocketService.getSocketIdByGuestUserId(guestUserId);
         if (socketId) {
-          const roomCode = this.webrtcService.getRoomCodeBySocketId(socketId);
+          const roomCode = this.gameSocketService.getRoomCodeBySocketId(socketId);
           if (roomCode) {
-            const io = this.webrtcService.getIO();
+            const io = this.gameSocketService.getIO();
             io.to(roomCode).emit('participant-preparation-updated', {
               guestUserId,
               preparationStatus: result,
@@ -456,8 +456,8 @@ export class RoomController {
       const result = await this.roomService.startRecording(roomCode, hostGuestId);
 
       // Socket.IO로 모든 참여자에게 녹화 시작 알림
-      if (this.webrtcService) {
-        const io = this.webrtcService.getIO();
+      if (this.gameSocketService) {
+        const io = this.gameSocketService.getIO();
         io.to(roomCode).emit('recording-started', {
           startedBy: hostGuestId,
           timestamp: new Date(),
@@ -499,8 +499,8 @@ export class RoomController {
       const result = await this.roomService.stopRecording(roomCode, hostGuestId);
 
       // Socket.IO로 모든 참여자에게 녹화 종료 알림
-      if (this.webrtcService) {
-        const io = this.webrtcService.getIO();
+      if (this.gameSocketService) {
+        const io = this.gameSocketService.getIO();
         io.to(roomCode).emit('recording-stopped', {
           stoppedBy: hostGuestId,
           timestamp: new Date(),
@@ -542,8 +542,8 @@ export class RoomController {
       const result = await this.roomService.hostLeaveRoom(roomCode, hostGuestId);
 
       // Socket.IO로 모든 참여자에게 방 해체 알림
-      if (this.webrtcService) {
-        const io = this.webrtcService.getIO();
+      if (this.gameSocketService) {
+        const io = this.gameSocketService.getIO();
         io.to(roomCode).emit('room-dissolved', {
           reason: 'HOST_LEFT',
           message: '방장이 나가서 방이 종료되었습니다.',

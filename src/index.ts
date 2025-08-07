@@ -26,7 +26,8 @@ import roomRoutes from "./routes/room.routes.js";
 import { createRoomRoutes } from "./routes/room.routes.js";
 import webrtcRoutes from "./routes/webrtc.routes.js";
 import videoRoutes from "./routes/video.routes.js";
-import { WebRTCService } from "./services/webrtc.service.js";
+import { GameSocketService } from "./services/game-socket.service.js";
+import { WebRTCVoiceService } from "./services/webrtc-voice.service.js";
 import { RoomService } from "./services/room.service.js";
 import { responseMiddleware } from "./utils/response.util.js";
 import { globalErrorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
@@ -55,7 +56,7 @@ app.use(compression({
   threshold: 1024,
   level: 6,
   memLevel: 8,
-}));
+}) as any);
 
 const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['*'];
 
@@ -112,10 +113,10 @@ app.use(
       checkPeriod: 2 * 60 * 1000,
       dbRecordIdIsSessionId: true,
     })
-  })
+  }) as any
 );
 
-app.use(passport.initialize());
+app.use(passport.initialize() as any);
 app.use(passport.session());
 
 // 응답 헬퍼 미들웨어 적용
@@ -125,14 +126,16 @@ BigInt.prototype.toJSON = function() {
   return this.toString();
 };
 
-// WebRTC 서비스 초기화
-const webrtcService = new WebRTCService(server);
-// Room 서비스 초기화 (WebRTC 서비스 주입)
-const roomService = new RoomService(webrtcService);
+// 게임 소켓 서비스 초기화 (게임 로직 담당)
+const gameSocketService = new GameSocketService(server);
 
-// WebRTC 서비스에 Room 서비스 주입
-webrtcService.setRoomService(roomService);
-logger.info('WebRTC 시그널링 서버가 초기화되었습니다.');
+// WebRTC 음성 채팅 서비스 초기화 (음성 채팅만 담당)
+const webrtcVoiceService = new WebRTCVoiceService(server);
+
+// Room 서비스 초기화
+const roomService = new RoomService();
+
+logger.info('게임 소켓 서비스와 WebRTC 음성 서비스가 초기화되었습니다.');
 
 // 라우트 설정
 app.get("/", (req, res) => {
@@ -171,7 +174,7 @@ app.get('/session-info', (req, res) => {
 });
 
 // GameCast API 라우트
-app.use("/api/rooms", createRoomRoutes(webrtcService));
+app.use("/api/rooms", createRoomRoutes(gameSocketService));
 app.use("/api/webrtc", webrtcRoutes);
 app.use("/api/videos", videoRoutes);
 
@@ -300,7 +303,7 @@ const swaggerSpecs = swaggerJSDoc(swaggerOptions);
 // 디버깅을 위해 생성된 스펙 로그 출력
 console.log('Generated Swagger specs paths:', Object.keys((swaggerSpecs as any).paths || {}));
 
-app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpecs, {
+app.use('/docs', swaggerUiExpress.serve as any, swaggerUiExpress.setup(swaggerSpecs, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: 'GameCast API Documentation',
@@ -337,7 +340,7 @@ app.use('/docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpecs, {
       return res;
     }
   }
-}));
+}) as any);
 
 // 에러 핸들링 미들웨어
 app.use(globalErrorHandler);

@@ -90,7 +90,7 @@ export const responseMiddleware = (req: any, res: Response, next: any) => {
       const { errorCode = "unknown", reason: errReason, data: errData } = errorCodeOrError;
       return this.json(createFailResponse(errorCode, errReason, errData));
     } else {
-      return this.json(createFailResponse(errorCodeOrError || "unknown", reason, data));
+      return this.json(createFailResponse(String(errorCodeOrError || "unknown"), reason, data));
     }
   };
 

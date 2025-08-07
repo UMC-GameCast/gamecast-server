@@ -271,7 +271,7 @@ router.post('/upload',
   upload.fields([
     { name: 'video', maxCount: 1 },
     { name: 'audio', maxCount: 1 }
-  ]),
+  ]) as any,
   videoController.uploadGameRecording
 );
 
