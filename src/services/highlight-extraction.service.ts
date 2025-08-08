@@ -86,25 +86,48 @@ export interface HighlightCallbackData {
       total_clips: number;
       successfully_created: number;
       clips_by_participant: Record<string, {
-        s3_url: string;
-        s3_key: string;
-        filename: string;
+        video: {
+          s3_url: string;
+          s3_key: string;
+          filename: string;
+        };
+        audio: {
+          s3_url: string;
+          s3_key: string;
+          filename: string;
+        };
         is_main_detector: boolean;
       }>;
-      all_clip_urls: string[];
+      all_video_urls: string[];
+      all_audio_urls: string[];
       s3_folder_path: string;
       main_detector_clip: {
-        s3_url: string;
-        s3_key: string;
-        filename: string;
+        user_id: string;
+        video: {
+          s3_url: string;
+          s3_key: string;
+          filename: string;
+        };
+        audio: {
+          s3_url: string;
+          s3_key: string;
+          filename: string;
+        };
         is_main_detector: boolean;
       };
     };
     participant_clips: Array<{
       user_id: string;
-      s3_url: string;
-      s3_key: string;
-      filename: string;
+      video: {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+      };
+      audio: {
+        s3_url: string;
+        s3_key: string;
+        filename: string;
+      };
       is_main_detector: boolean;
     }>;
   }>;
@@ -211,6 +234,123 @@ export class HighlightExtractionService {
    */
   public generateCallbackUrl(roomCode: string): string {
     return `${this.apiServerBaseUrl}/api/videos/highlight-callback/${roomCode}`;
+  }
+
+  /**
+   * 콜백 데이터에서 프론트엔드용 하이라이트 정보 추출
+   */
+  public extractHighlightDataForFrontend(callbackData: HighlightCallbackData): {
+    roomCode: string;
+    gameTitle: string;
+    participantsCount: number;
+    processedAt: string;
+    summary: {
+      totalHighlights: number;
+      totalParticipantClips: number;
+      totalDuration: number;
+      averageQuality: number;
+    };
+    highlights: Array<{
+      highlightId: string;
+      highlightNumber: number;
+      highlightName: string;
+      detectedByUser: string;
+      timing: {
+        startTime: number;
+        endTime: number;
+        duration: number;
+      };
+      emotionInfo: {
+        primaryEmotion: string;
+        emotionDistribution: Record<string, number>;
+        emotionConfidence: number;
+        emotionIntensity: number;
+      };
+      qualityMetrics: {
+        qualityScore: number;
+        highlightCount: number;
+        categories: string[];
+      };
+      mediaFiles: {
+        totalClips: number;
+        successfullyCreated: number;
+        s3FolderPath: string;
+        allVideoUrls: string[];
+        allAudioUrls: string[];
+        participantClips: Array<{
+          userId: string;
+          videoUrl: string;
+          audioUrl: string;
+          videoFilename: string;
+          audioFilename: string;
+          isMainDetector: boolean;
+        }>;
+        mainDetectorClip: {
+          userId: string;
+          videoUrl: string;
+          audioUrl: string;
+          videoFilename: string;
+          audioFilename: string;
+        };
+      };
+    }>;
+  } {
+    return {
+      roomCode: callbackData.room_code,
+      gameTitle: callbackData.game_title,
+      participantsCount: callbackData.participants_count,
+      processedAt: callbackData.processing_completed_at,
+      summary: {
+        totalHighlights: callbackData.summary.total_highlights,
+        totalParticipantClips: callbackData.summary.total_participant_clips,
+        totalDuration: callbackData.summary.total_duration,
+        averageQuality: callbackData.summary.average_quality
+      },
+      highlights: callbackData.highlights.map(highlight => ({
+        highlightId: highlight.highlight_id,
+        highlightNumber: highlight.highlight_number,
+        highlightName: highlight.highlight_name,
+        detectedByUser: highlight.detected_by_user,
+        timing: {
+          startTime: highlight.timing.start_time,
+          endTime: highlight.timing.end_time,
+          duration: highlight.timing.duration
+        },
+        emotionInfo: {
+          primaryEmotion: highlight.emotion_info.primary_emotion,
+          emotionDistribution: highlight.emotion_info.emotion_distribution,
+          emotionConfidence: highlight.emotion_info.emotion_confidence,
+          emotionIntensity: highlight.emotion_info.emotion_intensity
+        },
+        qualityMetrics: {
+          qualityScore: highlight.quality_metrics.quality_score,
+          highlightCount: highlight.quality_metrics.highlight_count,
+          categories: highlight.quality_metrics.categories
+        },
+        mediaFiles: {
+          totalClips: highlight.clip_files.total_clips,
+          successfullyCreated: highlight.clip_files.successfully_created,
+          s3FolderPath: highlight.clip_files.s3_folder_path,
+          allVideoUrls: highlight.clip_files.all_video_urls,
+          allAudioUrls: highlight.clip_files.all_audio_urls,
+          participantClips: highlight.participant_clips.map(clip => ({
+            userId: clip.user_id,
+            videoUrl: clip.video.s3_url,
+            audioUrl: clip.audio.s3_url,
+            videoFilename: clip.video.filename,
+            audioFilename: clip.audio.filename,
+            isMainDetector: clip.is_main_detector
+          })),
+          mainDetectorClip: {
+            userId: highlight.clip_files.main_detector_clip.user_id,
+            videoUrl: highlight.clip_files.main_detector_clip.video.s3_url,
+            audioUrl: highlight.clip_files.main_detector_clip.audio.s3_url,
+            videoFilename: highlight.clip_files.main_detector_clip.video.filename,
+            audioFilename: highlight.clip_files.main_detector_clip.audio.filename
+          }
+        }
+      }))
+    };
   }
 
   /**

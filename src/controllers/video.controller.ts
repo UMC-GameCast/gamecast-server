@@ -872,14 +872,17 @@ export class VideoController {
                 endTimestamp: highlight.timing.end_time,
                 confidenceScore: highlight.emotion_info.emotion_confidence,
                 highlightType: 'voice_spike',
-                mainSourceFilePath: participantClip.s3_url,
+                mainSourceFilePath: participantClip.video.s3_url, // 비디오 URL 사용
                 detectionFeatures: {
                   highlightId: highlight.highlight_id,
                   highlightNumber: highlight.highlight_number,
                   guestUserId: participantClip.user_id,
-                  s3Url: participantClip.s3_url,
-                  s3Key: participantClip.s3_key,
-                  filename: participantClip.filename,
+                  videoUrl: participantClip.video.s3_url,
+                  audioUrl: participantClip.audio.s3_url,
+                  videoS3Key: participantClip.video.s3_key,
+                  audioS3Key: participantClip.audio.s3_key,
+                  videoFilename: participantClip.video.filename,
+                  audioFilename: participantClip.audio.filename,
                   description: highlight.highlight_name,
                   score: highlight.quality_metrics.quality_score,
                   emotion: highlight.emotion_info.primary_emotion,
@@ -891,7 +894,8 @@ export class VideoController {
                   // 새로운 clip_files 정보 추가
                   totalClips: highlight.clip_files.total_clips,
                   successfullyCreated: highlight.clip_files.successfully_created,
-                  allClipUrls: highlight.clip_files.all_clip_urls,
+                  allVideoUrls: highlight.clip_files.all_video_urls,
+                  allAudioUrls: highlight.clip_files.all_audio_urls,
                   s3FolderPath: highlight.clip_files.s3_folder_path,
                   mainDetectorClip: highlight.clip_files.main_detector_clip,
                   clipsbyParticipant: highlight.clip_files.clips_by_participant,
@@ -903,8 +907,8 @@ export class VideoController {
           }
         }
 
-        // 4. WebRTC를 통해 방 참여자들에게 하이라이트 완성 알림 전송
-        await this.notifyHighlightCompletion(callbackData.room_code, highlightAnalysis.id, callbackData.highlights.length);
+        // 4. WebRTC를 통해 방 참여자들에게 하이라이트 완성 알림 및 데이터 전송
+        await this.notifyHighlightCompletionWithData(callbackData);
 
         logger.info('하이라이트 콜백 데이터 저장 완료', {
           roomCode: callbackData.room_code,
@@ -950,12 +954,58 @@ export class VideoController {
           highlightCount
         });
       } else {
-        logger.warn('WebRTC 서비스를 찾을 수 없어 알림 전송 실패', { roomCode });
+        logger.warn('WebRTC 서비스 인스턴스를 찾을 수 없음', { roomCode });
       }
+
     } catch (error) {
       logger.error('하이라이트 완성 알림 전송 실패', {
         roomCode,
-        error
+        analysisId,
+        highlightCount,
+        error: error
+      });
+    }
+  }
+
+  /**
+   * 하이라이트 완성 알림과 함께 모든 S3 URL 데이터를 방 참여자들에게 전송
+   */
+  private async notifyHighlightCompletionWithData(callbackData: HighlightCallbackData): Promise<void> {
+    try {
+      // 하이라이트 추출 서비스를 통해 프론트엔드용 데이터 생성
+      const { HighlightExtractionService } = await import('../services/highlight-extraction.service.js');
+      const highlightService = new HighlightExtractionService();
+      const frontendData = highlightService.extractHighlightDataForFrontend(callbackData);
+
+      // WebRTC 서비스를 통해 Socket.IO로 알림과 데이터 전송
+      const { WebRTCService } = await import('../services/webrtc.service.js');
+      
+      // 글로벌 WebRTC 서비스 인스턴스 가져오기
+      const io = (global as any).webrtcService?.getIO();
+      
+      if (io) {
+        // 하이라이트 완성 알림과 함께 모든 데이터 전송
+        io.to(callbackData.room_code).emit('highlights-ready-with-data', {
+          success: true,
+          message: `${frontendData.highlights.length}개의 하이라이트가 완성되었습니다!`,
+          timestamp: new Date().toISOString(),
+          data: frontendData
+        });
+
+        logger.info('하이라이트 완성 알림 및 데이터 전송 완료', {
+          roomCode: callbackData.room_code,
+          highlightsCount: frontendData.highlights.length,
+          totalVideoUrls: frontendData.highlights.reduce((total, h) => total + h.mediaFiles.allVideoUrls.length, 0),
+          totalAudioUrls: frontendData.highlights.reduce((total, h) => total + h.mediaFiles.allAudioUrls.length, 0)
+        });
+      } else {
+        logger.warn('WebRTC 서비스 인스턴스를 찾을 수 없음', { roomCode: callbackData.room_code });
+      }
+
+    } catch (error) {
+      logger.error('하이라이트 완성 알림 및 데이터 전송 실패', {
+        roomCode: callbackData.room_code,
+        error: error
       });
     }
   }
@@ -1036,6 +1086,182 @@ export class VideoController {
         error: {
           errorCode: 'DOWNLOAD_LINK_GENERATION_FAILED',
           reason: error instanceof Error ? error.message : '다운로드 링크 생성 중 오류가 발생했습니다.',
+          data: null
+        },
+        success: null
+      });
+    }
+  };
+
+  /**
+   * 방의 완성된 하이라이트 데이터 조회 (모든 S3 URL 포함)
+   */
+  public getHighlightDataWithUrls = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { roomCode } = req.params;
+
+      if (!roomCode) {
+        res.status(400).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'MISSING_ROOM_CODE',
+            reason: '방 코드가 필요합니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      logger.info('하이라이트 데이터 및 URL 조회 요청', { roomCode });
+
+      // 데이터베이스에서 하이라이트 데이터 조회
+      const { prisma } = await import('../db.config.js');
+      
+      const room = await prisma.room.findFirst({
+        where: { roomCode }
+      });
+
+      if (!room) {
+        res.status(404).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'ROOM_NOT_FOUND',
+            reason: '방을 찾을 수 없습니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      // 완성된 녹화 세션의 하이라이트 분석 조회
+      const recordingSessions = await prisma.recordingSession.findMany({
+        where: {
+          roomId: room.id,
+          status: 'completed'
+        },
+        include: {
+          highlightAnalyses: {
+            include: {
+              highlightClips: true
+            }
+          }
+        },
+        orderBy: {
+          endedAt: 'desc'
+        }
+      });
+
+      if (recordingSessions.length === 0) {
+        res.status(404).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'NO_HIGHLIGHTS_FOUND',
+            reason: '완성된 하이라이트가 없습니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      // 가장 최근 세션의 하이라이트 데이터 추출
+      const latestSession = recordingSessions[0];
+      if (!latestSession.highlightAnalyses || latestSession.highlightAnalyses.length === 0) {
+        res.status(404).json({
+          resultType: 'FAIL',
+          error: {
+            errorCode: 'NO_ANALYSIS_FOUND',
+            reason: '하이라이트 분석 결과가 없습니다.',
+            data: null
+          },
+          success: null
+        });
+        return;
+      }
+
+      // 하이라이트 클립에서 detectionFeatures 추출하여 프론트엔드 형태로 변환
+      const analysis = latestSession.highlightAnalyses[0];
+      const highlights = analysis.highlightClips.map((clip: any) => {
+        const features = clip.detectionFeatures || {};
+        
+        return {
+          highlightId: features.highlightId || clip.id,
+          highlightNumber: features.highlightNumber || 1,
+          highlightName: clip.clipName,
+          detectedByUser: features.detectedByUser,
+          timing: {
+            startTime: parseFloat(clip.startTimestamp.toString()),
+            endTime: parseFloat(clip.endTimestamp.toString()),
+            duration: parseFloat(clip.endTimestamp.toString()) - parseFloat(clip.startTimestamp.toString())
+          },
+          emotionInfo: {
+            primaryEmotion: features.emotion,
+            emotionConfidence: features.emotionConfidence,
+            emotionIntensity: features.emotionIntensity
+          },
+          qualityMetrics: {
+            qualityScore: features.score,
+            categories: features.tags || []
+          },
+          mediaFiles: {
+            totalClips: features.totalClips,
+            successfullyCreated: features.successfullyCreated,
+            s3FolderPath: features.s3FolderPath,
+            allVideoUrls: features.allVideoUrls || [],
+            allAudioUrls: features.allAudioUrls || [],
+            participantClips: features.clipsbyParticipant ? 
+              Object.entries(features.clipsbyParticipant).map(([userId, clipData]: [string, any]) => ({
+                userId,
+                videoUrl: clipData.video?.s3_url || '',
+                audioUrl: clipData.audio?.s3_url || '',
+                videoFilename: clipData.video?.filename || '',
+                audioFilename: clipData.audio?.filename || '',
+                isMainDetector: clipData.is_main_detector || false
+              })) : [],
+            mainDetectorClip: features.mainDetectorClip ? {
+              userId: features.mainDetectorClip.user_id,
+              videoUrl: features.mainDetectorClip.video?.s3_url || '',
+              audioUrl: features.mainDetectorClip.audio?.s3_url || '',
+              videoFilename: features.mainDetectorClip.video?.filename || '',
+              audioFilename: features.mainDetectorClip.audio?.filename || ''
+            } : null
+          }
+        };
+      });
+
+      const result = {
+        roomCode,
+        gameTitle: (latestSession.recordingSettings as any)?.gameTitle || 'Unknown Game',
+        processedAt: latestSession.endedAt?.toISOString() || new Date().toISOString(),
+        summary: {
+          totalHighlights: highlights.length,
+          totalParticipantClips: highlights.reduce((total, h) => total + h.mediaFiles.participantClips.length, 0)
+        },
+        highlights
+      };
+
+      res.status(200).json({
+        resultType: 'SUCCESS',
+        error: null,
+        success: {
+          message: '하이라이트 데이터를 성공적으로 조회했습니다.',
+          data: result
+        }
+      });
+
+    } catch (error) {
+      logger.error('하이라이트 데이터 및 URL 조회 실패', {
+        roomCode: req.params.roomCode,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      res.status(500).json({
+        resultType: 'FAIL',
+        error: {
+          errorCode: 'HIGHLIGHT_DATA_FETCH_FAILED',
+          reason: error instanceof Error ? error.message : '하이라이트 데이터 조회 중 오류가 발생했습니다.',
           data: null
         },
         success: null
