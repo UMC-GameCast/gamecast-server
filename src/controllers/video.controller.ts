@@ -863,7 +863,8 @@ export class VideoController {
         // 각 하이라이트 클립 저장
         for (const highlight of callbackData.highlights) {
           // 각 하이라이트의 참가자별 클립 저장
-          for (const participantClip of highlight.participant_clips) {
+          const participantClips = highlight.clip_files.clips_by_participant;
+          for (const [userId, clipData] of Object.entries(participantClips)) {
             await prisma.highlightClip.create({
               data: {
                 analysisId: highlightAnalysis.id,
@@ -872,23 +873,23 @@ export class VideoController {
                 endTimestamp: highlight.timing.end_time,
                 confidenceScore: highlight.emotion_info.emotion_confidence,
                 highlightType: 'voice_spike',
-                mainSourceFilePath: participantClip.video.s3_url, // 비디오 URL 사용
+                mainSourceFilePath: clipData.video.s3_url, // 비디오 URL 사용
                 detectionFeatures: {
                   highlightId: highlight.highlight_id,
                   highlightNumber: highlight.highlight_number,
-                  guestUserId: participantClip.user_id,
-                  videoUrl: participantClip.video.s3_url,
-                  audioUrl: participantClip.audio.s3_url,
-                  videoS3Key: participantClip.video.s3_key,
-                  audioS3Key: participantClip.audio.s3_key,
-                  videoFilename: participantClip.video.filename,
-                  audioFilename: participantClip.audio.filename,
+                  guestUserId: userId,
+                  videoUrl: clipData.video.s3_url,
+                  audioUrl: clipData.audio.s3_url,
+                  videoS3Key: clipData.video.s3_key,
+                  audioS3Key: clipData.audio.s3_key,
+                  videoFilename: clipData.video.filename,
+                  audioFilename: clipData.audio.filename,
                   description: highlight.highlight_name,
                   score: highlight.quality_metrics.quality_score,
                   emotion: highlight.emotion_info.primary_emotion,
                   emotionConfidence: highlight.emotion_info.emotion_confidence,
                   emotionIntensity: highlight.emotion_info.emotion_intensity,
-                  isMainDetector: participantClip.is_main_detector,
+                  isMainDetector: clipData.is_main_detector,
                   detectedByUser: highlight.detected_by_user,
                   tags: highlight.quality_metrics.categories || [],
                   // 새로운 clip_files 정보 추가
