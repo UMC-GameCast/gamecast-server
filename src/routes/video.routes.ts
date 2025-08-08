@@ -914,6 +914,155 @@ router.get('/rooms/:roomCode/highlights', videoController.getHighlightClips);
 
 /**
  * @swagger
+ * /api/videos/rooms/{roomCode}/highlights-with-urls:
+ *   get:
+ *     summary: 방의 하이라이트 데이터 조회 (모든 S3 URL 포함)
+ *     description: 완성된 하이라이트의 모든 참가자별 비디오/오디오 S3 URL을 포함하여 조회합니다
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: roomCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 방 코드
+ *         example: "D8U430"
+ *     responses:
+ *       200:
+ *         description: 하이라이트 데이터 조회 성공 (모든 S3 URL 포함)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 resultType:
+ *                   type: string
+ *                   example: "SUCCESS"
+ *                 error:
+ *                   type: null
+ *                 success:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "하이라이트 데이터를 성공적으로 조회했습니다."
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         roomCode:
+ *                           type: string
+ *                           example: "D8U430"
+ *                         gameTitle:
+ *                           type: string
+ *                           example: "League of Legends"
+ *                         processedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-08-08T05:15:07.471Z"
+ *                         summary:
+ *                           type: object
+ *                           properties:
+ *                             totalHighlights:
+ *                               type: integer
+ *                               example: 2
+ *                             totalParticipantClips:
+ *                               type: integer
+ *                               example: 10
+ *                         highlights:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               highlightId:
+ *                                 type: string
+ *                                 example: "527d0d32-acc1-4e08-a115-8dfbf83c1541"
+ *                               highlightNumber:
+ *                                 type: integer
+ *                                 example: 1
+ *                               highlightName:
+ *                                 type: string
+ *                                 example: "Normal 하이라이트 #1"
+ *                               detectedByUser:
+ *                                 type: string
+ *                                 example: "0ef2b8d7-e545-4e1d-8147-1"
+ *                               timing:
+ *                                 type: object
+ *                                 properties:
+ *                                   startTime:
+ *                                     type: number
+ *                                     example: 16.2
+ *                                   endTime:
+ *                                     type: number
+ *                                     example: 46.2
+ *                                   duration:
+ *                                     type: number
+ *                                     example: 30.0
+ *                               emotionInfo:
+ *                                 type: object
+ *                                 properties:
+ *                                   primaryEmotion:
+ *                                     type: string
+ *                                     example: "normal"
+ *                                   emotionConfidence:
+ *                                     type: number
+ *                                     example: 0.999
+ *                                   emotionIntensity:
+ *                                     type: number
+ *                                     example: 0.9990000128746033
+ *                               mediaFiles:
+ *                                 type: object
+ *                                 properties:
+ *                                   totalClips:
+ *                                     type: integer
+ *                                     example: 5
+ *                                   successfullyCreated:
+ *                                     type: integer
+ *                                     example: 5
+ *                                   s3FolderPath:
+ *                                     type: string
+ *                                     example: "D8U430/highlights/highlight_1/"
+ *                                   allVideoUrls:
+ *                                     type: array
+ *                                     items:
+ *                                       type: string
+ *                                     example: ["https://gamecast-highlights.s3.amazonaws.com/D8U430/highlights/highlight_1/user1.mp4"]
+ *                                   allAudioUrls:
+ *                                     type: array
+ *                                     items:
+ *                                       type: string
+ *                                     example: ["https://gamecast-highlights.s3.amazonaws.com/D8U430/highlights/highlight_1/user1.mp3"]
+ *                                   participantClips:
+ *                                     type: array
+ *                                     items:
+ *                                       type: object
+ *                                       properties:
+ *                                         userId:
+ *                                           type: string
+ *                                           example: "0ef2b8d7-e545-4e1d-8147-1"
+ *                                         videoUrl:
+ *                                           type: string
+ *                                           example: "https://gamecast-highlights.s3.amazonaws.com/D8U430/highlights/highlight_1/user1.mp4"
+ *                                         audioUrl:
+ *                                           type: string
+ *                                           example: "https://gamecast-highlights.s3.amazonaws.com/D8U430/highlights/highlight_1/user1.mp3"
+ *                                         videoFilename:
+ *                                           type: string
+ *                                           example: "highlight_1_user1.mp4"
+ *                                         audioFilename:
+ *                                           type: string
+ *                                           example: "highlight_1_user1.mp3"
+ *                                         isMainDetector:
+ *                                           type: boolean
+ *                                           example: true
+ *       404:
+ *         description: 방을 찾을 수 없거나 하이라이트가 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/rooms/:roomCode/highlights-with-urls', videoController.getHighlightDataWithUrls);
+
+/**
+ * @swagger
  * /api/videos/clips/{clipId}/download:
  *   get:
  *     summary: 하이라이트 클립 다운로드 링크 생성
