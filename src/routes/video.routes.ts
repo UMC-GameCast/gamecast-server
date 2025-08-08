@@ -735,113 +735,113 @@ router.get('/highlight/status/:jobId', videoController.getHighlightExtractionSta
  */
 router.post('/highlight-callback/:roomCode', videoController.handleHighlightCallback);
 
-/**
- * @swagger
- * /api/videos/rooms/{roomCode}/highlights:
- *   get:
- *     summary: 방의 하이라이트 클립 목록 조회
- *     description: 특정 방의 완성된 하이라이트 클립 목록을 조회합니다
- *     tags: [Videos]
- *     parameters:
- *       - in: path
- *         name: roomCode
- *         required: true
- *         schema:
- *           type: string
- *         description: 방 코드
- *     responses:
- *       200:
- *         description: 하이라이트 클립 목록 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 error:
- *                   type: null
- *                 success:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                       example: "하이라이트 클립 목록을 성공적으로 조회했습니다."
- *                     data:
- *                       type: object
- *                       properties:
- *                         roomCode:
- *                           type: string
- *                           example: "ABC123"
- *                         totalClips:
- *                           type: integer
- *                           example: 5
- *                         highlights:
- *                           type: array
- *                           items:
- *                             type: object
- *                             properties:
- *                               highlightId:
- *                                 type: string
- *                                 example: "highlight-uuid"
- *                               clipName:
- *                                 type: string
- *                                 example: "하이라이트 1"
- *                               highlightNumber:
- *                                 type: integer
- *                                 example: 1
- *                               startTime:
- *                                 type: number
- *                                 example: 125.5
- *                               endTime:
- *                                 type: number
- *                                 example: 135.2
- *                               duration:
- *                                 type: number
- *                                 example: 9.7
- *                               emotion:
- *                                 type: string
- *                                 example: "excitement"
- *                               emotionConfidence:
- *                                 type: number
- *                                 example: 0.85
- *                               qualityScore:
- *                                 type: number
- *                                 example: 92.5
- *                               downloadReady:
- *                                 type: boolean
- *                                 example: true
- *                               participantClips:
- *                                 type: array
- *                                 items:
- *                                   type: object
- *                                   properties:
- *                                     guestUserId:
- *                                       type: string
- *                                       example: "user-uuid"
- *                                     filename:
- *                                       type: string
- *                                       example: "highlight_1_user.mp4"
- *                                     s3Url:
- *                                       type: string
- *                                       example: "https://s3.aws.com/bucket/file.mp4"
- *                                     s3Key:
- *                                       type: string
- *                                       example: "highlights/room123/file.mp4"
- *                                     isMainDetector:
- *                                       type: boolean
- *                                       example: true
- *                               createdAt:
- *                                 type: string
- *                                 format: date-time
- *                                 example: "2025-08-05T10:30:00.000Z"
- *       404:
- *         description: 방을 찾을 수 없음
- *       500:
- *         description: 서버 오류
- */
-router.get('/rooms/:roomCode/highlights', videoController.getHighlightClips);
+// /**
+//  * @swagger
+//  * /api/videos/rooms/{roomCode}/highlights:
+//  *   get:
+//  *     summary: 방의 하이라이트 클립 목록 조회
+//  *     description: 특정 방의 완성된 하이라이트 클립 목록을 조회합니다
+//  *     tags: [Videos]
+//  *     parameters:
+//  *       - in: path
+//  *         name: roomCode
+//  *         required: true
+//  *         schema:
+//  *           type: string
+//  *         description: 방 코드
+//  *     responses:
+//  *       200:
+//  *         description: 하이라이트 클립 목록 조회 성공
+//  *         content:
+//  *           application/json:
+//  *             schema:
+//  *               type: object
+//  *               properties:
+//  *                 resultType:
+//  *                   type: string
+//  *                   example: "SUCCESS"
+//  *                 error:
+//  *                   type: null
+//  *                 success:
+//  *                   type: object
+//  *                   properties:
+//  *                     message:
+//  *                       type: string
+//  *                       example: "하이라이트 클립 목록을 성공적으로 조회했습니다."
+//  *                     data:
+//  *                       type: object
+//  *                       properties:
+//  *                         roomCode:
+//  *                           type: string
+//  *                           example: "ABC123"
+//  *                         totalClips:
+//  *                           type: integer
+//  *                           example: 5
+//  *                         highlights:
+//  *                           type: array
+//  *                           items:
+//  *                             type: object
+//  *                             properties:
+//  *                               highlightId:
+//  *                                 type: string
+//  *                                 example: "highlight-uuid"
+//  *                               clipName:
+//  *                                 type: string
+//  *                                 example: "하이라이트 1"
+//  *                               highlightNumber:
+//  *                                 type: integer
+//  *                                 example: 1
+//  *                               startTime:
+//  *                                 type: number
+//  *                                 example: 125.5
+//  *                               endTime:
+//  *                                 type: number
+//  *                                 example: 135.2
+//  *                               duration:
+//  *                                 type: number
+//  *                                 example: 9.7
+//  *                               emotion:
+//  *                                 type: string
+//  *                                 example: "excitement"
+//  *                               emotionConfidence:
+//  *                                 type: number
+//  *                                 example: 0.85
+//  *                               qualityScore:
+//  *                                 type: number
+//  *                                 example: 92.5
+//  *                               downloadReady:
+//  *                                 type: boolean
+//  *                                 example: true
+//  *                               participantClips:
+//  *                                 type: array
+//  *                                 items:
+//  *                                   type: object
+//  *                                   properties:
+//  *                                     guestUserId:
+//  *                                       type: string
+//  *                                       example: "user-uuid"
+//  *                                     filename:
+//  *                                       type: string
+//  *                                       example: "highlight_1_user.mp4"
+//  *                                     s3Url:
+//  *                                       type: string
+//  *                                       example: "https://s3.aws.com/bucket/file.mp4"
+//  *                                     s3Key:
+//  *                                       type: string
+//  *                                       example: "highlights/room123/file.mp4"
+//  *                                     isMainDetector:
+//  *                                       type: boolean
+//  *                                       example: true
+//  *                               createdAt:
+//  *                                 type: string
+//  *                                 format: date-time
+//  *                                 example: "2025-08-05T10:30:00.000Z"
+//  *       404:
+//  *         description: 방을 찾을 수 없음
+//  *       500:
+//  *         description: 서버 오류
+//  */
+// router.get('/rooms/:roomCode/highlights', videoController.getHighlightClips);
 
 /**
  * @swagger
