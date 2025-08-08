@@ -634,76 +634,7 @@ router.post('/highlight/extract/:roomCode', videoController.startHighlightExtrac
  */
 router.get('/highlight/status/:jobId', videoController.getHighlightExtractionStatus);
 
-/**
- * @swagger
- * /api/videos/highlight/list/{roomCode}:
- *   get:
- *     summary: 완성된 하이라이트 영상 목록 조회
- *     description: 특정 방의 완성된 하이라이트 영상 목록을 조회합니다.
- *     tags: [Videos]
- *     parameters:
- *       - in: path
- *         name: roomCode
- *         required: true
- *         schema:
- *           type: string
- *         description: 방 코드
- *         example: "ABCD12"
- *     responses:
- *       200:
- *         description: 목록 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 resultType:
- *                   type: string
- *                   example: "SUCCESS"
- *                 error:
- *                   type: null
- *                 success:
- *                   type: object
- *                   properties:
- *                     roomCode:
- *                       type: string
- *                       example: "ABCD12"
- *                     highlights:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           highlightId:
- *                             type: string
- *                             example: "highlight_123456789"
- *                           title:
- *                             type: string
- *                             example: "Epic Victory Highlight"
- *                           duration:
- *                             type: number
- *                             description: 영상 길이 (초)
- *                             example: 120
- *                           downloadUrl:
- *                             type: string
- *                             description: S3 다운로드 URL
- *                             example: "https://s3.amazonaws.com/bucket/highlight.mp4"
- *                           thumbnailS3Key:
- *                             type: string
- *                             description: 썸네일 S3 키
- *                             example: "highlights/ABCD12/thumbnail_123.jpg"
- *                           processedAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2023-11-15T10:30:00.000Z"
- *                     totalCount:
- *                       type: number
- *                       example: 3
- *       400:
- *         description: 잘못된 요청
- *       500:
- *         description: 서버 오류
- */
-router.get('/highlight/list/:roomCode', videoController.getHighlightVideos);
+
 
 /**
  * @swagger
