@@ -1,273 +1,251 @@
-# Gamecast Server (Node.js)
+# 🎮 GameCast Server
 
 ---
 
-## 🚀목차
-- [진행 현황](#진행-현황-progress)
-- [API 응답 형식](#-api-응답-형식)
-- [예외 처리](#-예외-처리)
-- [Swagger 문서](#-swagger-문서)
-- [개발 사이클](#-개발-사이클-development-workflow)
-- [Git 커밋 메시지 컨벤션](#-git-커밋-메시지-컨벤션)
+## 🛠️ 기술 스택
+
+### Backend Framework
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Express.js](https://img.shields.io/badge/Express.js-000000?style=flat-square&logo=express&logoColor=white)
+
+### Database & ORM
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=flat-square&logo=mysql&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white)
+
+### Real-time Communication
+![Socket.IO](https://img.shields.io/badge/Socket.IO-010101?style=flat-square&logo=socketdotio&logoColor=white)
+![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)
+
+### Cloud & Storage
+![AWS S3](https://img.shields.io/badge/AWS_S3-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+
+### Development Tools
+![Swagger](https://img.shields.io/badge/Swagger-85EA2D?style=flat-square&logo=swagger&logoColor=black)
 
 ---
 
-## 📆진행 현황 (Progress)
+## 🏗️ 서버 아키텍처
 
-| 기능                  | 상태 | 설명                                      |
-|---------------------|------|-----------------------------------------|
-| 프로젝트 세팅          |✅ 완료| Express.js 세팅, TypeScript 적용           |
-| 기본 응답 형식 설계     |✅ 완료| 응답 통일, 페이지네이션 지원               |
-| 공통 예외 처리         |✅ 완료| 커스텀 에러 클래스, 전역 에러 핸들러        |
-| Swagger 설정          |✅ 완료| API 문서 자동화, 타입 정의                |
-| CI/CD 테스트           | ⏳ 예정 | GitHub Actions + EC2 + Docker           |
+```mermaid
+graph TD
+    Client[Frontend Client] --> API[Express API Server]
+    Client --> WS[Socket.IO WebSocket]
+    Client --> WebRTC[WebRTC Signaling]
+    
+    API --> Routes[API Routes]
+    Routes --> Controllers[Controllers]
+    Controllers --> Services[Business Services]
+    Services --> DB[(MySQL Database)]
+    Services --> S3[AWS S3 Storage]
+    
+    WS --> WebRTCService[WebRTC Service]
+    WebRTCService --> RoomManager[Room Management]
+    RoomManager --> Recording[Recording Service]
+    
+    Recording --> HighlightAI[Highlight AI Server]
+    HighlightAI --> Callback[Callback Processing]
 
-> 🟡 : 개발 중 / ⏳ : 예정 / ✅ : 완료
-
----
-
-## 📋 API 응답 형식
-
-### 기본 응답 구조
-
-모든 API는 다음과 같은 통일된 형식으로 응답합니다:
-
-#### 성공 응답
-```json
-{
-  "resultType": "SUCCESS",
-  "error": null,
-  "success": {
-    // 실제 데이터
-  }
-}
+    
+    subgraph "External Services"
+        HighlightAI
+        S3
+    end
+    
+    subgraph "Core Services"
+        Auth
+        RoomManager
+        Recording
+        Services
+    end
 ```
 
-#### 실패 응답
-```json
-{
-  "resultType": "FAIL",
-  "error": {
-    "errorCode": "ERROR_CODE",
-    "reason": "에러 설명",
-    "data": null // 추가 데이터 (선택사항)
-  },
-  "success": null
-}
-```
+### 🔄 데이터 플로우
 
-#### 페이지네이션 응답
-```json
-{
-  "resultType": "SUCCESS",
-  "error": null,
-  "success": {
-    "data": [
-      // 실제 데이터 배열
-    ],
-    "pagination": {
-      "page": 1,
-      "size": 10,
-      "totalElements": 100,
-      "totalPages": 10,
-      "hasNext": true,
-      "hasPrevious": false
-    }
-  }
-}
-```
-
-### 응답 헬퍼 사용법
-
-컨트롤러에서 다음과 같이 사용할 수 있습니다:
-
-```typescript
-// 성공 응답
-res.success(data);
-
-// 에러 응답
-res.error("ERROR_CODE", "에러 메시지", additionalData);
-
-// 페이지네이션 응답
-res.paginated(dataArray, page, size, totalElements);
-```
+1. **사용자 인증**: JWT 토큰 기반 인증 시스템
+2. **방 생성/참가**: WebRTC 시그널링을 통한 실시간 연결
+3. **스트리밍**: 다중 참가자 실시간 화상/음성 전송
+4. **녹화**: 호스트 제어 하에 참가자별 미디어 녹화
+5. **하이라이트 추출**: AI 서버에서 감정 분석 기반 자동 추출
+6. **알림**: Socket.IO를 통한 실시간 완료 알림 및 데이터 전송
 
 ---
 
-## ⚠️ 예외 처리
-
-### 커스텀 에러 클래스
-
-| 에러 클래스 | HTTP 상태 | 설명 |
-|------------|----------|------|
-| `BadRequestError` | 400 | 잘못된 요청 |
-| `UnauthorizedError` | 401 | 인증 필요 |
-| `ForbiddenError` | 403 | 접근 권한 없음 |
-| `NotFoundError` | 404 | 리소스 없음 |
-| `ConflictError` | 409 | 리소스 충돌 |
-| `ValidationError` | 422 | 유효성 검사 실패 |
-| `InternalServerError` | 500 | 서버 내부 오류 |
-
-### 사용 예시
-
-```typescript
-import { BadRequestError, NotFoundError } from '../errors/custom.errors.js';
-
-// 에러 발생
-throw new BadRequestError('유효하지 않은 파라미터입니다.');
-throw new NotFoundError('사용자를 찾을 수 없습니다.');
-
-// 비동기 함수 에러 처리
-import { asyncHandler } from '../middlewares/error.middleware.js';
-
-router.get('/users/:id', asyncHandler(async (req, res) => {
-  // 에러가 발생하면 자동으로 전역 에러 핸들러로 전달됨
-  const user = await getUserById(req.params.id);
-  res.success(user);
-}));
-```
-
----
-
-## � Swagger 문서
-
-### 접속 방법
-- 개발 환경: `http://localhost:8888/docs`
-- API 스펙: `http://localhost:8888/openapi.json`
-
-### Swagger 주석 사용법
-
-```typescript
-router.get('/users/:id', asyncHandler(async (req, res) => {
-  // #swagger.tags = ['User']
-  // #swagger.summary = '사용자 상세 조회'
-  // #swagger.description = 'ID를 통해 특정 사용자의 정보를 조회합니다.'
-  // #swagger.parameters['id'] = { 
-  //   in: 'path', 
-  //   description: '사용자 ID', 
-  //   required: true, 
-  //   schema: { type: 'integer' } 
-  // }
-  // #swagger.responses[200] = { 
-  //   description: '사용자 조회 성공',
-  //   content: {
-  //     "application/json": {
-  //       schema: { $ref: '#/definitions/SuccessResponse' }
-  //     }
-  //   }
-  // }
-  
-  const user = await getUserById(req.params.id);
-  res.success(user);
-}));
-```
-
-### 사전 정의된 스키마
-
-- `SuccessResponse`: 성공 응답 형식
-- `FailResponse`: 실패 응답 형식
-- `PaginatedResponse`: 페이지네이션 응답 형식
-- `User`: 사용자 모델
-
----
-
-## 🔄 개발 사이클 (Development Workflow)
-
-이 프로젝트는 **GitHub Flow**를 기반으로 하며, 다음과 같은 절차로 개발을 진행합니다:
-
-### 📌 브랜치 전략
-
-| 브랜치명              | 용도 |
-|-------------------|------|
-| `main`            | 운영 배포용 (배포되는 안정 버전) |
-| `dev`             | 개발용 통합 브랜치 |
-| `feature/#(이슈번호)` | 기능 개발 브랜치 (`feature/login-api` 등) |
-
----
-
-### 👨‍💻 기능 개발 절차
-
-```bash
-# 1. dev에서 기능 브랜치 생성
-git checkout dev
-git pull origin dev
-git checkout -b feature/#1-login-api # 이슈 번호 1번 기준
-
-# 2. 코드 작성 & 커밋
-git add .
-git commit -m "feat: #1 로그인 API 구현" # 이슈 번호 1번 기준
-
-# 3. 원격 브랜치 푸시
-git push origin feature/login-api
-
-# 4. GitHub에서 PR 생성 → 대상 브랜치: dev
-# PR 설명에 Closes #1 이런식으로 작성
-```
-
-> **PR 제목 예시:**  
-> `feat: 로그인 API 구현`  
-> `fix: 회원가입 이메일 유효성 수정`
-
----
-
-### 🧪 PR 생성 시 자동 실행 (CI)
-
-`feature/* → dev` Pull Request 생성 혹은 업데이트 시 CI workflow 실행됨
-
-테스트 Job 실행 (`npm test`)
-
----
-
-### 🚀 병합 후 자동 배포 (CD)
-
-예정
-
----
-
-### 🧼 브랜치 정리
-
-- PR 병합 완료 후, `feature/*` 브랜치는 **삭제**
-- `dev` 브랜치에 병합
-- `main` 브랜치는 항상 **배포 가능한 상태 유지**
-
----
-
-## 🔐 Git 커밋 메시지 컨벤션
-
-| 태그 | 설명 |
-|------|------|
-| `feat` | 새로운 기능 추가 |
-| `fix` | 버그 수정 |
-| `docs` | 문서 수정 |
-| `refactor` | 리팩토링 |
-| `test` | 테스트 추가 |
-| `chore` | 빌드, 설정 관련 작업 |
-
-> 예시:  
-> `feat: 회원가입 API 구현`  
-> `fix: 로그인시 토큰 발급 오류 수정`
-
----
-
-## 📋 Node.js 프로젝트 구조
+## � 프로젝트 구조
 
 ```
 gamecast-server/
 ├── src/
-│   ├── controllers/     # 컨트롤러
-│   ├── models/         # 데이터 모델
-│   ├── routes/         # 라우터
-│   ├── middleware/     # 미들웨어
-│   ├── services/       # 비즈니스 로직
-│   ├── utils/          # 유틸리티
-│   └── app.js          # Express 앱 설정
-├── tests/              # 테스트 파일
-├── docs/               # API 문서 (Swagger)
-├── docker-compose.yml  # Docker 컨테이너 설정
-├── Dockerfile          # Docker 이미지 빌드
-├── package.json        # 프로젝트 의존성
-└── README.md
+│   ├── controllers/        # API 컨트롤러
+│   │   ├── auth.controller.ts
+│   │   ├── room.controller.ts
+│   │   └── video.controller.ts
+│   ├── services/          # 비즈니스 로직
+│   │   ├── auth.service.ts
+│   │   ├── webrtc.service.ts
+│   │   └── highlight-extraction.service.ts
+│   ├── routes/            # API 라우트
+│   │   ├── auth.routes.ts
+│   │   ├── room.routes.ts
+│   │   └── video.routes.ts
+│   ├── middlewares/       # 미들웨어
+│   │   ├── auth.middleware.ts
+│   │   └── error.middleware.ts
+│   ├── utils/             # 유틸리티
+│   │   ├── jwt.util.ts
+│   │   └── s3.util.ts
+│   ├── types/             # TypeScript 타입
+│   ├── validators/        # 입력 검증
+│   └── index.ts          # 앱 진입점
+├── prisma/               # 데이터베이스 스키마
+│   ├── schema.prisma
+│   └── migrations/
+├── config/               # 환경 설정
+├── docker/              # Docker 설정
+├── nginx/               # Nginx 설정
+└── docs/                # API 문서
 ```
 
 ---
+
+## 🚀 빠른 시작
+
+### 📋 사전 요구사항
+
+- Node.js 18.0.0 이상
+- MySQL 8.0 이상
+- Docker & Docker Compose (선택사항)
+
+### ⚡ 설치 및 실행
+
+```bash
+# 1. 저장소 클론
+git clone https://github.com/UMC-GameCast/gamecast-server.git
+cd gamecast-server
+
+# 2. 의존성 설치
+npm install
+
+# 3. 환경 변수 설정
+cp .env.example .env
+# .env 파일을 열어 필요한 값들을 설정하세요
+
+# 4. 데이터베이스 마이그레이션
+npx prisma migrate dev
+
+# 5. 개발 서버 시작
+npm run dev
+```
+
+### 🐳 Docker로 실행
+
+```bash
+# Docker Compose로 전체 환경 실행
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f gamecast-server
+```
+
+---
+
+
+
+## 🌐 브랜치 전략
+
+본 프로젝트는 **Git Flow** 기반의 브랜치 전략을 사용합니다:
+
+```
+main (운영)
+ ├── develop (개발 통합)
+     ├── feature/user-auth (기능 개발)
+     ├── feature/webrtc-streaming
+     ├── feature/highlight-extraction
+     └── refactor/clipCallback (리팩토링)
+```
+
+### 브랜치 유형
+
+| 브랜치 | 용도 | 명명 규칙 |
+|--------|------|-----------|
+| `main` | 운영 배포용 안정 버전 | `main` |
+| `develop` | 개발 통합 브랜치 | `develop` |
+| `feature/*` | 새로운 기능 개발 | `feature/기능명` |
+| `bugfix/*` | 버그 수정 | `bugfix/버그명` |
+| `refactor/*` | 코드 리팩토링 | `refactor/리팩토링명` |
+
+---
+
+
+
+## 🔧 개발 환경 설정
+
+### 환경 변수
+
+```bash
+
+
+### 스크립트 명령어
+
+```bash
+```
+# 개발 서버 시작 (Hot Reload)
+npm run dev
+
+# 프로덕션 빌드
+npm run build
+
+# 프로덕션 서버 시작
+npm start
+
+# 테스트 실행
+npm test
+
+# 코드 린팅
+npm run lint
+
+# 코드 포맷팅
+npm run format
+
+# 데이터베이스 마이그레이션
+npm run db:migrate
+
+# Prisma Studio 실행
+npm run db:studio
+```
+
+---
+
+## � 성능 및 모니터링
+
+### 로깅
+- **Winston**: 구조화된 로그 관리
+- **Morgan**: HTTP 요청 로깅
+- **로그 레벨**: error, warn, info, debug
+
+### 에러 처리
+- 전역 에러 핸들러
+- 커스텀 에러 클래스
+- 상세한 에러 응답 형식
+
+---
+
+## � 보안
+
+- CORS 설정
+- Rate Limiting
+- Input Validation (Joi)
+- SQL Injection 방지 (Prisma ORM)
+
+---
+
+
+<div align="center">
+
+**⭐ 이 프로젝트가 도움이 되셨다면 Star를 눌러주세요! ⭐**
+
+Made with ❤️ by GameCast Team
+
+</div>
 
