@@ -325,7 +325,7 @@ export class RoomService {
    */
   private formatParticipantData(participant: any, hostGuestId?: string | null) {
     const status = participant.preparationStatus as any;
-    const characterInfo = status?.characterSetup || null;
+    const characterSetup = status?.characterSetup || null;
     
     return {
       guestUserId: participant.guestUser?.id || participant.guestUserId,
@@ -333,13 +333,13 @@ export class RoomService {
       role: participant.role,
       joinedAt: participant.joinedAt,
       preparationStatus: {
-        characterSetup: status?.characterSetup || false,
+        characterSetup: characterSetup ? true : false,
         screenSetup: status?.screenSetup || false
       },
-      characterInfo: characterInfo ? {
-        selectedOptions: characterInfo.selectedOptions || null,
-        selectedColors: characterInfo.selectedColors || null,
-        isCustomized: !!(characterInfo.selectedOptions && characterInfo.selectedColors)
+      characterInfo: characterSetup ? {
+        selectedOptions: characterSetup.selectedOptions || null,
+        selectedColors: characterSetup.selectedColors || null,
+        isCustomized: !!(characterSetup.selectedOptions && characterSetup.selectedColors)
       } : null,
       isHost: hostGuestId ? hostGuestId === participant.guestUserId : false
     };
@@ -955,8 +955,8 @@ export class RoomService {
    */
   async updatePreparationStatus(
     guestUserId: string, 
-    updateData: PreparationStatusUpdate
-  ): Promise<PreparationStatus> {
+    updateData: any // characterSetup과 screenSetup을 포함할 수 있도록 any 타입으로 변경
+  ): Promise<any> {
     return await prisma.$transaction(async (tx) => {
       // 현재 참여자 정보 조회
       const participant = await tx.roomParticipant.findFirst({
@@ -971,18 +971,29 @@ export class RoomService {
       }
 
       // 현재 준비 상태 가져오기 (기본값 설정)
-      const currentStatus = (participant.preparationStatus as unknown as PreparationStatus) || {
-        characterReady: false,
-        screenReady: false,
-        finalReady: false
+      const currentStatus = (participant.preparationStatus as any) || {
+        characterSetup: null,
+        screenSetup: false
       };
 
       // 업데이트할 상태 병합
-      const newStatus: PreparationStatus = {
-        characterReady: updateData.characterReady ?? currentStatus.characterReady,
-        screenReady: updateData.screenReady ?? currentStatus.screenReady,
-        finalReady: updateData.finalReady ?? currentStatus.finalReady
+      const newStatus: any = {
+        ...currentStatus
       };
+
+      // characterSetup이 제공된 경우 업데이트
+      if (updateData.characterSetup) {
+        newStatus.characterSetup = updateData.characterSetup;
+        logger.info('캐릭터 정보 업데이트', { 
+          guestUserId, 
+          characterSetup: updateData.characterSetup 
+        });
+      }
+
+      // screenSetup이 제공된 경우 업데이트
+      if (updateData.screenSetup !== undefined) {
+        newStatus.screenSetup = updateData.screenSetup;
+      }
 
       // DB 업데이트
       await tx.roomParticipant.update({
@@ -991,16 +1002,6 @@ export class RoomService {
           preparationStatus: newStatus as any
         }
       });
-
-      // 캐릭터 정보가 포함된 경우 별도 저장 (선택적)
-      if (updateData.characterInfo) {
-        // 캐릭터 정보는 별도 테이블이나 JSON 필드에 저장 가능
-        // 현재는 preparationStatus와 분리하여 관리
-        logger.info('캐릭터 정보 업데이트', { 
-          guestUserId, 
-          characterInfo: updateData.characterInfo 
-        });
-      }
 
       logger.info('준비 상태 업데이트 완료', {
         guestUserId,

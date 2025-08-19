@@ -1,15 +1,34 @@
 /**
- * 단순화된 Boolean 기반 준비 상태 인터페이스
+ * 준비 상태 인터페이스 (캐릭터 정보 포함)
  */
 export interface PreparationStatus {
-  characterReady: boolean;    // 캐릭터 커스터마이징 완료
-  screenReady: boolean;       // 화면 설정 완료  
-  finalReady: boolean;        // 최종 준비 완료 ("준비 완료" 버튼 클릭)
-  [key: string]: any;         // Prisma JSON 호환성을 위한 인덱스 시그니처
+  characterSetup?: CharacterSetup;  // 캐릭터 커스터마이징 데이터
+  screenSetup?: boolean;            // 화면 설정 완료
+  [key: string]: any;               // Prisma JSON 호환성을 위한 인덱스 시그니처
 }
 
 /**
- * 캐릭터 정보 (선택사항)
+ * 캐릭터 설정 정보
+ */
+export interface CharacterSetup {
+  selectedOptions?: {
+    face: string;
+    hair: string;
+    top: string;
+    bottom: string;
+    accessory: string;
+  };
+  selectedColors?: {
+    face: string;
+    hair: string;
+    top: string;
+    bottom: string;
+    accessory: string;
+  };
+}
+
+/**
+ * 구 버전 캐릭터 정보 (하위 호환성)
  */
 export interface CharacterInfo {
   selectedOptions?: {
@@ -33,10 +52,12 @@ export interface CharacterInfo {
  * 준비 상태 업데이트 요청 데이터
  */
 export interface PreparationStatusUpdate {
-  characterReady?: boolean;
-  screenReady?: boolean;
-  finalReady?: boolean;
-  characterInfo?: CharacterInfo;  // 캐릭터 정보는 별도로 관리
+  characterSetup?: CharacterSetup;  // 캐릭터 설정
+  screenSetup?: boolean;            // 화면 설정
+  characterReady?: boolean;         // 구 버전 호환성
+  screenReady?: boolean;            // 구 버전 호환성
+  finalReady?: boolean;             // 구 버전 호환성
+  characterInfo?: CharacterInfo;    // 구 버전 호환성
 }
 
 /**
