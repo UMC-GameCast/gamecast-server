@@ -1059,6 +1059,10 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *               screenSetup:
  *                 type: boolean
  *                 example: false
+ *               isReady:
+ *                 type: boolean
+ *                 description: 준비 버튼을 눌렀는지 여부
+ *                 example: true
  *           examples:
  *             characterOnly:
  *               summary: 캐릭터 설정만 업데이트
@@ -1100,6 +1104,11 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *                     bottom: "black"
  *                     accessory: "gold"
  *                 screenSetup: true
+ *             readyOnly:
+ *               summary: 준비 상태만 업데이트
+ *               value:
+ *                 guestUserId: "550e8400-e29b-41d4-a716-446655440001"
+ *                 isReady: true
  *     responses:
  *       200:
  *         description: 준비 상태 업데이트 성공

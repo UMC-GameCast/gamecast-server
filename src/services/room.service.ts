@@ -334,7 +334,8 @@ export class RoomService {
       joinedAt: participant.joinedAt,
       preparationStatus: {
         characterSetup: characterSetup ? true : false,
-        screenSetup: status?.screenSetup || false
+        screenSetup: status?.screenSetup || false,
+        isReady: status?.isReady || false
       },
       characterInfo: characterSetup ? {
         selectedOptions: characterSetup.selectedOptions || null,
@@ -993,6 +994,15 @@ export class RoomService {
       // screenSetup이 제공된 경우 업데이트
       if (updateData.screenSetup !== undefined) {
         newStatus.screenSetup = updateData.screenSetup;
+      }
+
+      // isReady가 제공된 경우 업데이트
+      if (updateData.isReady !== undefined) {
+        newStatus.isReady = updateData.isReady;
+        logger.info('준비 상태 업데이트', { 
+          guestUserId, 
+          isReady: updateData.isReady 
+        });
       }
 
       // DB 업데이트

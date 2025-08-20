@@ -181,6 +181,12 @@ export const updatePreparationSchema = Joi.object({
     .optional()
     .messages({
       'boolean.base': '화면 설정 상태는 true 또는 false여야 합니다.'
+    }),
+
+  isReady: Joi.boolean()
+    .optional()
+    .messages({
+      'boolean.base': '준비 상태는 true 또는 false여야 합니다.'
     })
 }).min(2).messages({
   'object.min': 'guestUserId 외에 최소 하나의 설정값이 있어야 합니다.'
