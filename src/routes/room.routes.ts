@@ -287,6 +287,9 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *                               screenSetup:
  *                                 type: boolean
  *                                 example: false
+ *                               isReady:
+ *                                 type: boolean
+ *                                 example: true
  *                           characterInfo:
  *                             type: object
  *                             nullable: true
@@ -1061,7 +1064,7 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *                 example: false
  *               isReady:
  *                 type: boolean
- *                 description: 준비 버튼을 눌렀는지 여부
+ *                 description: 준비 버튼을 눌렀는지 여부 (preparationStatus 내부에 포함됨)
  *                 example: true
  *           examples:
  *             characterOnly:
@@ -1175,6 +1178,9 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *                         screenSetup:
  *                           type: boolean
  *                           example: false
+ *                         isReady:
+ *                           type: boolean
+ *                           example: true
  *             examples:
  *               success:
  *                 summary: 성공 응답 예시
@@ -1198,6 +1204,7 @@ export function createRoomRoutes(gameSocketService: GameSocketService) {
  *                           bottom: "blue"
  *                           accessory: "yellow"
  *                       screenSetup: false
+ *                       isReady: true
  *       400:
  *         description: 잘못된 요청
  *         content:

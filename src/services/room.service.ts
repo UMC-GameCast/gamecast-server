@@ -26,6 +26,7 @@ interface RoomWithParticipants extends Room {
     preparationStatus: {
       characterSetup: boolean;
       screenSetup: boolean;
+      isReady: boolean;
     };
     characterInfo: {
       selectedOptions: {
@@ -242,7 +243,8 @@ export class RoomService {
             role: 'host',
             preparationStatus: {
               characterSetup: false,
-              screenSetup: false
+              screenSetup: false,
+              isReady: false
             }
           }
         });
@@ -358,6 +360,7 @@ export class RoomService {
     preparationStatus: {
       characterSetup: boolean;
       screenSetup: boolean;
+      isReady: boolean;
     };
     characterInfo: {
       selectedOptions: {
@@ -538,7 +541,8 @@ export class RoomService {
           isActive: true,
           preparationStatus: {
             characterSetup: false,
-            screenSetup: false
+            screenSetup: false,
+            isReady: false
           }
         }
       });
