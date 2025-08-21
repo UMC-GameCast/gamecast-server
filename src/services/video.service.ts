@@ -401,68 +401,121 @@ export class VideoService {
       const { userId, roomCode, page, limit } = query;
       const skip = (page - 1) * limit;
 
-      // session 테이블에서 game_recording 타입의 데이터만 조회
-      const [sessions, totalCount] = await Promise.all([
-        prisma.session.findMany({
+      // RecordingSession 테이블에서 실제 녹화 데이터 조회
+      const whereClause: any = {};
+      
+      if (roomCode) {
+        whereClause.room = {
+          roomCode: roomCode
+        };
+      }
+      
+      if (userId) {
+        whereClause.mediaAssets = {
+          some: {
+            guestUser: {
+              sessionId: userId
+            }
+          }
+        };
+      }
+
+      const [recordingSessions, totalCount] = await Promise.all([
+        prisma.recordingSession.findMany({
+          where: whereClause,
           skip,
           take: limit,
-          orderBy: { expiresAt: 'desc' }
+          orderBy: { startedAt: 'desc' },
+          include: {
+            room: true,
+            mediaAssets: {
+              include: {
+                guestUser: true
+              }
+            },
+            initiatorGuest: true
+          }
         }),
-        prisma.session.count()
+        prisma.recordingSession.count({
+          where: whereClause
+        })
       ]);
 
-      // game_recording 타입만 필터링하고 조건에 맞는 것만 선택
-      const videos = sessions
-        .filter(session => {
-          if (!session.data) return false;
-          try {
-            const data = JSON.parse(session.data);
-            if (data.type !== 'game_recording') return false;
-            if (userId && data.userId !== userId) return false;
-            if (roomCode && data.roomCode !== roomCode) return false;
-            return true;
-          } catch {
-            return false;
-          }
-        })
-        .map(session => {
-          const data = JSON.parse(session.data);
-          return {
-            videoId: session.id,
-            videoPath: data.videoPath,
-            audioPath: data.audioPath || undefined,
-            metadata: {
-              roomCode: data.roomCode,
-              userId: data.userId,
-              gameTitle: data.gameTitle,
-              duration: data.duration,
-              resolution: data.resolution,
-              fps: data.fps,
-              description: data.description,
-              tags: data.tags || []
-            },
-            uploadedAt: new Date(),
-            status: data.status as 'processing' | 'completed' | 'failed'
-          };
-        });
+      // RecordingSession 데이터를 VideoResult 형태로 변환
+      const videos: VideoResult[] = recordingSessions.map(session => {
+        // 비디오와 오디오 파일 분리
+        const videoAsset = session.mediaAssets.find(asset => asset.assetType === 'video');
+        const audioAsset = session.mediaAssets.find(asset => asset.assetType === 'audio');
+        
+        // 파일 경로 결정: storage_path 우선, 없으면 MediaAsset의 filePath 사용
+        const videoPath = session.storagePath || videoAsset?.filePath || '';
+        const audioPath = audioAsset?.filePath;
+        
+        // 메타데이터 구성
+        const metadata: VideoMetadata = {
+          roomCode: session.room.roomCode,
+          userId: session.initiatorGuest?.sessionId || 'unknown',
+          gameTitle: (session.recordingSettings as any)?.gameTitle || 'Unknown Game',
+          duration: session.durationSeconds || 0,
+          resolution: (videoAsset?.technicalMetadata as any)?.resolution || '1920x1080',
+          fps: (videoAsset?.technicalMetadata as any)?.fps || 30,
+          description: session.sessionName || undefined,
+          tags: (session.recordingSettings as any)?.tags || []
+        };
 
-      const filteredTotal = videos.length;
-      const totalPages = Math.ceil(filteredTotal / limit);
+        return {
+          videoId: session.id,
+          videoPath,
+          audioPath,
+          metadata,
+          uploadedAt: session.startedAt,
+          status: this.mapRecordingStatusToVideoStatus(session.status)
+        };
+      });
+
+      const totalPages = Math.ceil(totalCount / limit);
 
       const result: VideoListResult = {
         videos,
-        totalCount: filteredTotal,
+        totalCount,
         currentPage: page,
         totalPages,
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1
       };
 
+      logger.info(`영상 목록 조회 완료: ${totalCount}개 중 ${videos.length}개 반환`, {
+        totalCount,
+        returnedCount: videos.length,
+        page,
+        limit,
+        roomCode,
+        userId
+      });
+
       return result;
 
     } catch (error) {
       logger.error('영상 목록 조회 실패:', error);
       throw new Error('영상 목록 조회 중 오류가 발생했습니다.');
+    }
+  }
+
+  /**
+   * RecordingStatus를 VideoStatus로 매핑
+   */
+  private mapRecordingStatusToVideoStatus(recordingStatus: string): 'processing' | 'completed' | 'failed' {
+    switch (recordingStatus) {
+      case 'recording':
+      case 'processing':
+        return 'processing';
+      case 'completed':
+        return 'completed';
+      case 'failed':
+      case 'error':
+        return 'failed';
+      default:
+        return 'processing';
     }
   }
 
