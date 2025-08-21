@@ -1036,7 +1036,7 @@ export class RoomService {
     allReady: boolean;
     readyCount: number;
     totalCount: number;
-    participants: ReadyCheckResult[];
+    participants: any[];
   }> {
     const room = await prisma.room.findFirst({
       where: {
@@ -1057,22 +1057,33 @@ export class RoomService {
       throw new NotFoundError('방을 찾을 수 없습니다.');
     }
 
-    const participants: ReadyCheckResult[] = room.participants.map(participant => {
-      const status = (participant.preparationStatus as unknown as PreparationStatus) || {
-        characterReady: false,
-        screenReady: false,
-        finalReady: false
+    const participants = room.participants.map(participant => {
+      const status = (participant.preparationStatus as any) || {
+        characterSetup: null,
+        screenSetup: false,
+        isReady: false
       };
 
-      const isFullyReady = status.characterReady && status.screenReady && status.finalReady;
+      // 새로운 데이터 구조에 맞춰 준비 상태 확인
+      const characterReady = status.characterSetup ? true : false;
+      const screenReady = status.screenSetup || false;
+      const isReady = status.isReady || false;
+      
+      // 모든 조건이 만족되어야 완전히 준비된 상태
+      const isFullyReady = characterReady && screenReady && isReady;
 
       return {
         guestUserId: participant.guestUserId,
         nickname: participant.guestUser.nickname,
-        characterReady: status.characterReady,
-        screenReady: status.screenReady,
-        finalReady: status.finalReady,
-        isFullyReady
+        characterReady,
+        screenReady,
+        isReady,
+        isFullyReady,
+        preparationStatus: {
+          characterSetup: characterReady,
+          screenSetup: screenReady,
+          isReady: isReady
+        }
       };
     });
 
