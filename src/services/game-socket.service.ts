@@ -74,6 +74,11 @@ export class GameSocketService {
         this.handlePreparationStatusRealtime(socket, data);
       });
 
+      // isReady 상태 업데이트 (준비 버튼)
+      socket.on('update-ready-status', (data: { isReady: boolean }) => {
+        this.handleReadyStatusUpdate(socket, data);
+      });
+
       // 최종 준비 완료 (레디 버튼)
       socket.on('ready-to-start', () => {
         this.handleReadyToStart(socket);
@@ -261,6 +266,46 @@ export class GameSocketService {
     }
   }
 
+  private async handleReadyStatusUpdate(socket: Socket, data: { isReady: boolean }) {
+    try {
+      const guestUserId = (socket as any).guestUserId;
+      const roomCode = (socket as any).roomCode;
+      const nickname = (socket as any).nickname;
+
+      if (!roomCode || !guestUserId) {
+        socket.emit('error', { message: '방 정보를 찾을 수 없습니다.' });
+        return;
+      }
+
+      // DB에 isReady 상태 업데이트
+      await this.roomService.updatePreparationStatus(guestUserId, {
+        isReady: data.isReady
+      });
+
+      // 방의 모든 사용자에게 준비 상태 변경 알림
+      this.io.to(roomCode).emit('ready-status-changed', {
+        guestUserId,
+        nickname,
+        isReady: data.isReady,
+        timestamp: new Date()
+      });
+
+      // 모든 플레이어 준비 상태 체크
+      await this.checkAllReadyAndNotifyHost(roomCode);
+
+      logger.info('준비 버튼 상태 업데이트', {
+        guestUserId,
+        nickname,
+        roomCode,
+        isReady: data.isReady
+      });
+
+    } catch (error) {
+      logger.error('준비 버튼 상태 업데이트 오류:', error);
+      socket.emit('error', { message: '준비 상태 업데이트 중 오류가 발생했습니다.' });
+    }
+  }
+
   private async handlePreparationStatusUpdate(socket: Socket, data: PreparationStatusData) {
     try {
       const { characterReady, screenReady, finalReady } = data;
@@ -380,16 +425,16 @@ export class GameSocketService {
         return;
       }
 
-      // DB에 최종 준비 상태 저장
+      // DB에 최종 준비 상태 저장 (isReady = true)
       await this.roomService.updatePreparationStatus(guestUserId, {
-        finalReady: true
+        isReady: true
       });
 
       // 방의 모든 사용자에게 준비 완료 알림
       this.io.to(roomCode).emit('user-ready', {
         guestUserId,
         nickname,
-        finalReady: true,
+        isReady: true,
         timestamp: new Date()
       });
 
@@ -702,27 +747,34 @@ export class GameSocketService {
         return;
       }
 
-      // 모든 참여자의 준비 상태 확인 (단순한 Boolean 체크)
+      // 모든 참여자의 준비 상태 확인 (새로운 데이터 구조 사용)
       const allReady = room.participants.every(participant => {
-        const status = (participant.preparationStatus as unknown as PreparationStatus) || {
-          characterReady: false,
-          screenReady: false,
-          finalReady: false
+        const status = (participant.preparationStatus as any) || {
+          characterSetup: null,
+          screenSetup: false,
+          isReady: false
         };
-        return status.characterReady === true &&
-               status.screenReady === true &&
-               status.finalReady === true;
+        
+        // 새로운 구조: characterSetup(객체), screenSetup(boolean), isReady(boolean)
+        const characterReady = status.characterSetup ? true : false;
+        const screenReady = status.screenSetup || false;
+        const isReady = status.isReady || false;
+        
+        return characterReady && screenReady && isReady;
       });
 
       const readyCount = room.participants.filter(participant => {
-        const status = (participant.preparationStatus as unknown as PreparationStatus) || {
-          characterReady: false,
-          screenReady: false,
-          finalReady: false
+        const status = (participant.preparationStatus as any) || {
+          characterSetup: null,
+          screenSetup: false,
+          isReady: false
         };
-        return status.characterReady === true &&
-               status.screenReady === true &&
-               status.finalReady === true;
+        
+        const characterReady = status.characterSetup ? true : false;
+        const screenReady = status.screenSetup || false;
+        const isReady = status.isReady || false;
+        
+        return characterReady && screenReady && isReady;
       }).length;
 
       if (allReady) {
