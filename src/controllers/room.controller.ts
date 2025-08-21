@@ -213,16 +213,19 @@ export class RoomController {
    */
   async updatePreparation(req: Request, res: Response, next: NextFunction) {
     try {
-      const { guestUserId, characterSetup, screenSetup } = req.body;
+      const { guestUserId, characterSetup, screenSetup, isReady } = req.body;
 
       if (!guestUserId) {
         throw new BadRequestError('게스트 사용자 ID가 필요합니다.');
       }
 
-      // characterSetup 또는 screenSetup 중 최소 하나는 있어야 함
-      if (!characterSetup && screenSetup === undefined) {
-        throw new BadRequestError('캐릭터 설정 또는 화면 설정 중 최소 하나는 제공되어야 합니다.');
+      // characterSetup, screenSetup, isReady 중 최소 하나는 있어야 함
+      // 하나도 없으면 바로 에러
+      if (!characterSetup && !screenSetup && !isReady) {
+        throw new BadRequestError('캐릭터 설정, 화면 설정, 준비 상태 중 최소 하나는 제공되어야 합니다.');
       }
+
+      
       // 준비 상태 데이터 구성
       const preparationStatus: Record<string, any> = {};
       
@@ -232,6 +235,10 @@ export class RoomController {
       
       if (screenSetup !== undefined) {
         preparationStatus.screenSetup = screenSetup;
+      }
+      
+      if (isReady !== undefined) {
+        preparationStatus.isReady = isReady;
       }
       
       logger.info('준비 상태 업데이트 요청', { 
