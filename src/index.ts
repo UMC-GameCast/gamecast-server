@@ -26,6 +26,7 @@ import roomRoutes from "./routes/room.routes.js";
 import { createRoomRoutes } from "./routes/room.routes.js";
 import webrtcRoutes from "./routes/webrtc.routes.js";
 import videoRoutes from "./routes/video.routes.js";
+import highlightRoutes from "./routes/highlight.routes.js";
 import { GameSocketService } from "./services/game-socket.service.js";
 import { WebRTCVoiceService } from "./services/webrtc-voice.service.js";
 import { RoomService } from "./services/room.service.js";
@@ -177,6 +178,7 @@ app.get('/session-info', (req, res) => {
 app.use("/api/rooms", createRoomRoutes(gameSocketService));
 app.use("/api/webrtc", webrtcRoutes);
 app.use("/api/videos", videoRoutes);
+app.use("/api/highlights", highlightRoutes);
 
 // WebRTC 테스트 페이지
 app.get('/webrtc-test', (req, res) => {
